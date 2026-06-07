@@ -243,7 +243,31 @@ export function register_on_map_events(handle, callback) {
     return 4;
 }
 
+export function unregister_on_map_events(handle) {
+    record("unregister_on_map_events", { handle });
+}
+
 export function register_on_layer_events(handle, layer_id, callback) {
     record("register_on_layer_events", { handle, layer_id, callback });
     return 5;
+}
+
+export function unregister_on_layer_events(handle, layer_id) {
+    record("unregister_on_layer_events", { handle, layer_id });
+}
+
+export function register_on_marker_drag_events(marker_handle, callback) {
+    record("register_on_marker_drag_events", { marker_handle, callback });
+}
+
+export function unregister_on_marker_drag_events(marker_handle) {
+    record("unregister_on_marker_drag_events", { marker_handle });
+}
+
+export function register_on_popup_events(popup_handle, callback) {
+    record("register_on_popup_events", { popup_handle, callback });
+}
+
+export function unregister_on_popup_events(popup_handle) {
+    record("unregister_on_popup_events", { popup_handle });
 }

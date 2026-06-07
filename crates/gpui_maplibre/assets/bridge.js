@@ -42,6 +42,33 @@ function popup_content_value(content, expected_kind) {
     return content.value;
 }
 
+function event_allowed(kinds, kind) {
+    return Array.isArray(kinds) && kinds.includes(kind);
+}
+
+function clock_now(target) {
+    if (typeof target?.now === "function") {
+        return target.now();
+    }
+    return Date.now();
+}
+
+function throttle(callback, throttle_ms, target) {
+    if (typeof throttle_ms !== "number" || throttle_ms <= 0) {
+        return callback;
+    }
+
+    let last_emit_ms = null;
+    return (payload) => {
+        const now_ms = clock_now(target);
+        if (last_emit_ms !== null && now_ms - last_emit_ms < throttle_ms) {
+            return;
+        }
+        last_emit_ms = now_ms;
+        callback(payload);
+    };
+}
+
 export function post(payload, target = default_target()) {
     const message = JSON.stringify(payload);
     if (typeof window !== "undefined" && target === window && window.ipc?.postMessage) {
@@ -391,6 +418,100 @@ export function dispatch(command, target = default_target()) {
 
         if (command.type === "remove_popup") {
             mapCore.remove_popup(command.popup_handle);
+            return { ok: true };
+        }
+
+        if (command.type === "subscribe_map_events") {
+            const subscription = command.subscription ?? {};
+            const emit = throttle((event) => {
+                post({ type: "map", handle: command.handle, event }, target);
+            }, subscription.throttle_ms, target);
+            const callback = (event) => {
+                if (!event_allowed(subscription.kinds, event.kind)) {
+                    return;
+                }
+                emit(event);
+            };
+            mapCore.register_on_map_events(command.handle, callback);
+            return { ok: true };
+        }
+
+        if (command.type === "unsubscribe_map_events") {
+            mapCore.unregister_on_map_events(command.handle);
+            return { ok: true };
+        }
+
+        if (command.type === "subscribe_layer_events") {
+            const subscription = command.subscription ?? {};
+            const emit = throttle((event) => {
+                post({ type: "layer", handle: command.handle, event }, target);
+            }, subscription.throttle_ms, target);
+            const callback = (event) => {
+                if (!event_allowed(subscription.kinds, event.kind)) {
+                    return;
+                }
+                emit(event);
+            };
+            mapCore.register_on_layer_events(
+                command.handle,
+                subscription.layer_id,
+                callback,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "unsubscribe_layer_events") {
+            mapCore.unregister_on_layer_events(command.handle, command.layer_id);
+            return { ok: true };
+        }
+
+        if (command.type === "subscribe_marker_drag_events") {
+            const subscription = command.subscription ?? {};
+            const emit = throttle((event) => {
+                post(
+                    {
+                        type: "marker_drag",
+                        marker_handle: command.marker_handle,
+                        event,
+                    },
+                    target,
+                );
+            }, subscription.throttle_ms, target);
+            const callback = (event) => {
+                if (!event_allowed(subscription.kinds, event.kind)) {
+                    return;
+                }
+                emit(event);
+            };
+            mapCore.register_on_marker_drag_events(command.marker_handle, callback);
+            return { ok: true };
+        }
+
+        if (command.type === "unsubscribe_marker_drag_events") {
+            mapCore.unregister_on_marker_drag_events(command.marker_handle);
+            return { ok: true };
+        }
+
+        if (command.type === "subscribe_popup_events") {
+            const subscription = command.subscription ?? {};
+            mapCore.register_on_popup_events(command.popup_handle, (event) => {
+                if (!event_allowed(subscription.kinds, event.kind)) {
+                    return;
+                }
+                post(
+                    {
+                        type: "popup",
+                        popup_handle: command.popup_handle,
+                        event,
+                    },
+                    target,
+                );
+            });
+            return { ok: true };
+        }
+
+        if (command.type === "unsubscribe_popup_events") {
+            mapCore.unregister_on_popup_events(command.popup_handle);
             return { ok: true };
         }
 

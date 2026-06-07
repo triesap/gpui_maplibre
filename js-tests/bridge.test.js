@@ -28,6 +28,10 @@ function test_target() {
     return {
         messages,
         mapElement,
+        currentTime: 0,
+        now() {
+            return this.currentTime;
+        },
         document: {
             getElementById(id) {
                 return id === "map" ? mapElement : null;
@@ -673,6 +677,152 @@ test("dispatch popup commands choose safe text or trusted html paths", () => {
             },
         },
     ]);
+});
+
+test("dispatch map event subscriptions filter and throttle events", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "subscribe_map_events",
+                handle: 1,
+                subscription: {
+                    kinds: ["move_end"],
+                    throttle_ms: 100,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+
+    const callback = fakeMapCore.recorded_calls()[0].payload.callback;
+    callback({ kind: "move", view: { zoom: 11 } });
+    callback({ kind: "move_end", view: { zoom: 11 } });
+    target.currentTime = 50;
+    callback({ kind: "move_end", view: { zoom: 12 } });
+    target.currentTime = 150;
+    callback({ kind: "move_end", view: { zoom: 13 } });
+
+    assert.deepEqual(target.messages, [
+        {
+            type: "map",
+            handle: 1,
+            event: { kind: "move_end", view: { zoom: 11 } },
+        },
+        {
+            type: "map",
+            handle: 1,
+            event: { kind: "move_end", view: { zoom: 13 } },
+        },
+    ]);
+
+    assert.deepEqual(dispatch({ type: "unsubscribe_map_events", handle: 1 }, target), {
+        ok: true,
+    });
+    assert.equal(fakeMapCore.recorded_calls().at(-1).name, "unregister_on_map_events");
+});
+
+test("dispatch layer marker and popup subscriptions filter events", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "subscribe_layer_events",
+                handle: 1,
+                subscription: {
+                    layer_id: "places",
+                    kinds: ["click"],
+                    throttle_ms: null,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "subscribe_marker_drag_events",
+                marker_handle: 2,
+                subscription: {
+                    kinds: ["drag_end"],
+                    throttle_ms: null,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "subscribe_popup_events",
+                popup_handle: 4,
+                subscription: {
+                    kinds: ["open"],
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+
+    const calls = fakeMapCore.recorded_calls();
+    const layerCallback = calls.find((call) => call.name === "register_on_layer_events").payload
+        .callback;
+    const markerCallback = calls.find((call) => call.name === "register_on_marker_drag_events")
+        .payload.callback;
+    const popupCallback = calls.find((call) => call.name === "register_on_popup_events").payload
+        .callback;
+
+    layerCallback({ kind: "mouse_move", layer_id: "places" });
+    layerCallback({ kind: "click", layer_id: "places" });
+    markerCallback({ kind: "drag" });
+    markerCallback({ kind: "drag_end" });
+    popupCallback({ kind: "close" });
+    popupCallback({ kind: "open" });
+
+    assert.deepEqual(target.messages, [
+        {
+            type: "layer",
+            handle: 1,
+            event: { kind: "click", layer_id: "places" },
+        },
+        {
+            type: "marker_drag",
+            marker_handle: 2,
+            event: { kind: "drag_end" },
+        },
+        {
+            type: "popup",
+            popup_handle: 4,
+            event: { kind: "open" },
+        },
+    ]);
+
+    assert.deepEqual(dispatch({ type: "unsubscribe_layer_events", handle: 1, layer_id: "places" }, target), {
+        ok: true,
+    });
+    assert.deepEqual(dispatch({ type: "unsubscribe_marker_drag_events", marker_handle: 2 }, target), {
+        ok: true,
+    });
+    assert.deepEqual(dispatch({ type: "unsubscribe_popup_events", popup_handle: 4 }, target), {
+        ok: true,
+    });
+
+    assert.deepEqual(
+        fakeMapCore.recorded_calls().slice(-3).map((call) => call.name),
+        [
+            "unregister_on_layer_events",
+            "unregister_on_marker_drag_events",
+            "unregister_on_popup_events",
+        ],
+    );
 });
 
 test("post_dom_ready emits the dom_ready IPC event", () => {
