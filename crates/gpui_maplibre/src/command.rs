@@ -52,6 +52,80 @@ pub enum MapCommand {
         duration_ms: Option<u32>,
         max_zoom: Option<f64>,
     },
+    AddSource {
+        handle: MapHandle,
+        source_id: String,
+        source_spec: serde_json::Value,
+    },
+    #[serde(rename = "add_geojson_source")]
+    AddGeoJsonSource {
+        handle: MapHandle,
+        source_id: String,
+        geojson: serde_json::Value,
+        promote_id: Option<String>,
+    },
+    #[serde(rename = "update_geojson_source")]
+    UpdateGeoJsonSource {
+        handle: MapHandle,
+        source_id: String,
+        geojson: serde_json::Value,
+    },
+    RemoveSource {
+        handle: MapHandle,
+        source_id: String,
+    },
+    AddLayer {
+        handle: MapHandle,
+        layer_id: String,
+        layer_spec: serde_json::Value,
+        before_id: Option<String>,
+    },
+    RemoveLayer {
+        handle: MapHandle,
+        layer_id: String,
+    },
+    SetLayoutProperty {
+        handle: MapHandle,
+        layer_id: String,
+        property_name: String,
+        value: serde_json::Value,
+    },
+    SetPaintProperty {
+        handle: MapHandle,
+        layer_id: String,
+        property_name: String,
+        value: serde_json::Value,
+    },
+    SetFilter {
+        handle: MapHandle,
+        layer_id: String,
+        filter: Option<serde_json::Value>,
+    },
+    SetLayerZoomRange {
+        handle: MapHandle,
+        layer_id: String,
+        min_zoom: Option<f64>,
+        max_zoom: Option<f64>,
+    },
+    SetFeatureState {
+        handle: MapHandle,
+        source_id: String,
+        source_layer: Option<String>,
+        feature_id: serde_json::Value,
+        state: serde_json::Value,
+    },
+    SetTerrain {
+        handle: MapHandle,
+        terrain: Option<serde_json::Value>,
+    },
+    SetFog {
+        handle: MapHandle,
+        fog: Option<serde_json::Value>,
+    },
+    SetLight {
+        handle: MapHandle,
+        light: Option<serde_json::Value>,
+    },
 }
 
 #[cfg(test)]
@@ -195,6 +269,229 @@ mod tests {
                 "padding": 24.0,
                 "duration_ms": null,
                 "max_zoom": 14.0
+            })
+        );
+    }
+
+    #[test]
+    fn command_sources_serialize_payloads() {
+        assert_eq!(
+            serde_json::to_value(MapCommand::AddSource {
+                handle: MapHandle(1),
+                source_id: "tiles".to_owned(),
+                source_spec: json!({"type": "vector", "url": "mapbox://tiles"}),
+            })
+            .unwrap(),
+            json!({
+                "type": "add_source",
+                "handle": 1,
+                "source_id": "tiles",
+                "source_spec": {"type": "vector", "url": "mapbox://tiles"}
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::AddGeoJsonSource {
+                handle: MapHandle(1),
+                source_id: "places".to_owned(),
+                geojson: json!({"type": "FeatureCollection", "features": []}),
+                promote_id: Some("id".to_owned()),
+            })
+            .unwrap(),
+            json!({
+                "type": "add_geojson_source",
+                "handle": 1,
+                "source_id": "places",
+                "geojson": {"type": "FeatureCollection", "features": []},
+                "promote_id": "id"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::UpdateGeoJsonSource {
+                handle: MapHandle(1),
+                source_id: "places".to_owned(),
+                geojson: json!({"type": "FeatureCollection", "features": []}),
+            })
+            .unwrap(),
+            json!({
+                "type": "update_geojson_source",
+                "handle": 1,
+                "source_id": "places",
+                "geojson": {"type": "FeatureCollection", "features": []}
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::RemoveSource {
+                handle: MapHandle(1),
+                source_id: "places".to_owned(),
+            })
+            .unwrap(),
+            json!({
+                "type": "remove_source",
+                "handle": 1,
+                "source_id": "places"
+            })
+        );
+    }
+
+    #[test]
+    fn command_layers_serialize_payloads() {
+        assert_eq!(
+            serde_json::to_value(MapCommand::AddLayer {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+                layer_spec: json!({"id": "places-fill", "type": "fill", "source": "places"}),
+                before_id: Some("labels".to_owned()),
+            })
+            .unwrap(),
+            json!({
+                "type": "add_layer",
+                "handle": 1,
+                "layer_id": "places-fill",
+                "layer_spec": {"id": "places-fill", "type": "fill", "source": "places"},
+                "before_id": "labels"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::RemoveLayer {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+            })
+            .unwrap(),
+            json!({
+                "type": "remove_layer",
+                "handle": 1,
+                "layer_id": "places-fill"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetLayoutProperty {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+                property_name: "visibility".to_owned(),
+                value: json!("none"),
+            })
+            .unwrap(),
+            json!({
+                "type": "set_layout_property",
+                "handle": 1,
+                "layer_id": "places-fill",
+                "property_name": "visibility",
+                "value": "none"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetPaintProperty {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+                property_name: "fill-color".to_owned(),
+                value: json!("#ffcc00"),
+            })
+            .unwrap(),
+            json!({
+                "type": "set_paint_property",
+                "handle": 1,
+                "layer_id": "places-fill",
+                "property_name": "fill-color",
+                "value": "#ffcc00"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetFilter {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+                filter: None,
+            })
+            .unwrap(),
+            json!({
+                "type": "set_filter",
+                "handle": 1,
+                "layer_id": "places-fill",
+                "filter": null
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetLayerZoomRange {
+                handle: MapHandle(1),
+                layer_id: "places-fill".to_owned(),
+                min_zoom: Some(3.0),
+                max_zoom: None,
+            })
+            .unwrap(),
+            json!({
+                "type": "set_layer_zoom_range",
+                "handle": 1,
+                "layer_id": "places-fill",
+                "min_zoom": 3.0,
+                "max_zoom": null
+            })
+        );
+    }
+
+    #[test]
+    fn command_feature_state_serializes_payloads() {
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetFeatureState {
+                handle: MapHandle(1),
+                source_id: "places".to_owned(),
+                source_layer: Some("settlements".to_owned()),
+                feature_id: json!("place-1"),
+                state: json!({"selected": true}),
+            })
+            .unwrap(),
+            json!({
+                "type": "set_feature_state",
+                "handle": 1,
+                "source_id": "places",
+                "source_layer": "settlements",
+                "feature_id": "place-1",
+                "state": {"selected": true}
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetTerrain {
+                handle: MapHandle(1),
+                terrain: None,
+            })
+            .unwrap(),
+            json!({
+                "type": "set_terrain",
+                "handle": 1,
+                "terrain": null
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetFog {
+                handle: MapHandle(1),
+                fog: Some(json!({"range": [0.5, 10.0]})),
+            })
+            .unwrap(),
+            json!({
+                "type": "set_fog",
+                "handle": 1,
+                "fog": {"range": [0.5, 10.0]}
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(MapCommand::SetLight {
+                handle: MapHandle(1),
+                light: None,
+            })
+            .unwrap(),
+            json!({
+                "type": "set_light",
+                "handle": 1,
+                "light": null
             })
         );
     }
