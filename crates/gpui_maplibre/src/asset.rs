@@ -1,4 +1,5 @@
 const INDEX_HTML_TEMPLATE: &str = include_str!("../assets/index.html");
+const BRIDGE_JS: &str = include_str!("../assets/bridge.js");
 const GPUI_MAPLIBRE_CSS: &str = include_str!("../assets/gpui_maplibre.css");
 const MAP_CORE_JS: &str = include_str!("../assets/map_core.js");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
@@ -67,6 +68,10 @@ pub fn private_index_html(asset_mode: &AssetMode) -> String {
 
 pub fn gpui_maplibre_css() -> &'static str {
     GPUI_MAPLIBRE_CSS
+}
+
+pub fn bridge_js() -> &'static str {
+    BRIDGE_JS
 }
 
 pub fn map_core_js() -> &'static str {
@@ -182,5 +187,17 @@ mod tests {
         assert!(cdn_html.contains("https://unpkg.com/maplibre-gl@5.13.0"));
         assert!(vendored_html.contains("./vendor/maplibre-gl.js"));
         assert!(vendored_html.contains("./vendor/maplibre-gl.css"));
+    }
+
+    #[test]
+    fn bridge_asset_contract_defines_dispatcher_ipc_and_dom_ready() {
+        let js = bridge_js();
+
+        assert!(js.contains(r#"import * as mapCore from "./map_core.js""#));
+        assert!(js.contains("window.__gpui_maplibre.dispatch"));
+        assert!(js.contains("window.ipc.postMessage"));
+        assert!(js.contains(r#"type: "dom_ready""#));
+        assert!(js.contains("unknown_command"));
+        assert!(js.contains(r#"type: "error""#));
     }
 }
