@@ -4,6 +4,33 @@ pub trait CommandTransport {
     fn send_command(&mut self, command: MapCommand) -> Result<()>;
 }
 
+#[cfg(feature = "gpui-webview")]
+pub struct GpuiWebViewTransport<'a> {
+    webview: &'a gpui_wry::WebView,
+}
+
+#[cfg(feature = "gpui-webview")]
+impl<'a> GpuiWebViewTransport<'a> {
+    pub fn new(webview: &'a gpui_wry::WebView) -> Self {
+        Self { webview }
+    }
+
+    pub fn webview(&self) -> &'a gpui_wry::WebView {
+        self.webview
+    }
+}
+
+#[cfg(feature = "gpui-webview")]
+impl CommandTransport for GpuiWebViewTransport<'_> {
+    fn send_command(&mut self, command: MapCommand) -> Result<()> {
+        let script = crate::script::script_for_command(&command)?;
+        self.webview
+            .evaluate_script(&script)
+            .map_err(|error| MapLibreError::platform(error.to_string()))?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct FakeTransport {
     commands: Vec<MapCommand>,

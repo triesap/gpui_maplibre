@@ -1,3 +1,4 @@
+use crate::asset::private_index_html;
 use crate::{AssetMode, MapInitOptions};
 use std::marker::PhantomData;
 
@@ -27,6 +28,10 @@ impl MapLibreViewConfig {
     pub fn with_asset_mode(mut self, asset_mode: AssetMode) -> Self {
         self.asset_mode = asset_mode;
         self
+    }
+
+    pub fn private_html(&self) -> String {
+        private_index_html(&self.asset_mode)
     }
 }
 
@@ -60,5 +65,7 @@ mod tests {
         let stub = MapLibreWebViewStub::new(config);
 
         assert_eq!(stub.config().asset_mode, AssetMode::VendoredPlaceholder);
+        assert!(stub.config().private_html().contains(r#"id="map""#));
+        assert!(stub.config().private_html().contains(r#"./bridge.js"#));
     }
 }

@@ -48,6 +48,8 @@ pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
     PopupEventSubscription,
 };
+#[cfg(feature = "gpui-webview")]
+pub use transport::GpuiWebViewTransport;
 pub use transport::{CommandTransport, FakeTransport};
 pub use types::{Bounds, LngLat, MapControlAnchor};
 
