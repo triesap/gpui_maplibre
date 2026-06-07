@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 
+pub mod command;
 pub mod error;
 pub mod event;
 pub mod ids;
 pub mod options;
 pub mod types;
 
+pub use command::MapCommand;
 pub use error::{MapLibreError, Result};
 pub use event::{
     FeatureHit, LayerEvent, LayerEventKind, LayerFeatureHit, MapClickEvent, MapEvent, MapEventKind,
