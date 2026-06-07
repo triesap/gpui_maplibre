@@ -281,7 +281,8 @@ impl EventRouter {
             } => {
                 let was_pending = self.pending_control_requests.remove(&request_id);
                 self.control_handles_by_request
-                    .insert(request_id, control_handle);
+                    .entry(request_id)
+                    .or_insert(control_handle);
                 EventRouterAction::NativeControlCreated {
                     request_id,
                     control_handle,
@@ -294,7 +295,8 @@ impl EventRouter {
             } => {
                 let was_pending = self.pending_marker_requests.remove(&request_id);
                 self.marker_handles_by_request
-                    .insert(request_id, marker_handle);
+                    .entry(request_id)
+                    .or_insert(marker_handle);
                 EventRouterAction::MarkerCreated {
                     request_id,
                     marker_handle,
@@ -307,7 +309,8 @@ impl EventRouter {
             } => {
                 let was_pending = self.pending_popup_requests.remove(&request_id);
                 self.popup_handles_by_request
-                    .insert(request_id, popup_handle);
+                    .entry(request_id)
+                    .or_insert(popup_handle);
                 EventRouterAction::PopupCreated {
                     request_id,
                     popup_handle,
@@ -586,5 +589,118 @@ mod tests {
             RuntimeCommandAction::Dispatch(resize_command())
         );
         assert_eq!(queue.pending_len(), 0);
+    }
+
+    #[test]
+    fn pending_handles_resolve_successful_request_ids() {
+        let mut router = EventRouter::new();
+        router.track_control_request(10);
+        router.track_marker_request(11);
+        router.track_popup_request(12);
+
+        assert!(matches!(
+            router.route_event(MapLibreEvent::NativeControlCreated {
+                request_id: 10,
+                control_handle: ControlHandle(7),
+            }),
+            EventRouterAction::NativeControlCreated {
+                was_pending: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            router.route_event(MapLibreEvent::MarkerCreated {
+                request_id: 11,
+                marker_handle: MarkerHandle(2),
+            }),
+            EventRouterAction::MarkerCreated {
+                was_pending: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            router.route_event(MapLibreEvent::PopupCreated {
+                request_id: 12,
+                popup_handle: PopupHandle(4),
+            }),
+            EventRouterAction::PopupCreated {
+                was_pending: true,
+                ..
+            }
+        ));
+
+        assert_eq!(
+            router.control_handle_for_request(10),
+            Some(ControlHandle(7))
+        );
+        assert_eq!(router.marker_handle_for_request(11), Some(MarkerHandle(2)));
+        assert_eq!(router.popup_handle_for_request(12), Some(PopupHandle(4)));
+    }
+
+    #[test]
+    fn pending_handles_report_unknown_request_ids_without_pending_match() {
+        let mut router = EventRouter::new();
+
+        let action = router.route_event(MapLibreEvent::PopupCreated {
+            request_id: 99,
+            popup_handle: PopupHandle(4),
+        });
+
+        assert_eq!(
+            action,
+            EventRouterAction::PopupCreated {
+                request_id: 99,
+                popup_handle: PopupHandle(4),
+                was_pending: false,
+            }
+        );
+        assert_eq!(router.popup_handle_for_request(99), Some(PopupHandle(4)));
+    }
+
+    #[test]
+    fn pending_handles_do_not_overwrite_duplicate_resolutions() {
+        let mut router = EventRouter::new();
+        router.track_marker_request(11);
+
+        router.route_event(MapLibreEvent::MarkerCreated {
+            request_id: 11,
+            marker_handle: MarkerHandle(2),
+        });
+        let action = router.route_event(MapLibreEvent::MarkerCreated {
+            request_id: 11,
+            marker_handle: MarkerHandle(3),
+        });
+
+        assert_eq!(
+            action,
+            EventRouterAction::MarkerCreated {
+                request_id: 11,
+                marker_handle: MarkerHandle(3),
+                was_pending: false,
+            }
+        );
+        assert_eq!(router.marker_handle_for_request(11), Some(MarkerHandle(2)));
+    }
+
+    #[test]
+    fn pending_handles_keep_control_marker_and_popup_maps_separate() {
+        let mut router = EventRouter::new();
+
+        router.route_event(MapLibreEvent::NativeControlCreated {
+            request_id: 1,
+            control_handle: ControlHandle(7),
+        });
+        router.route_event(MapLibreEvent::MarkerCreated {
+            request_id: 1,
+            marker_handle: MarkerHandle(2),
+        });
+        router.route_event(MapLibreEvent::PopupCreated {
+            request_id: 1,
+            popup_handle: PopupHandle(4),
+        });
+
+        assert_eq!(router.control_handle_for_request(1), Some(ControlHandle(7)));
+        assert_eq!(router.marker_handle_for_request(1), Some(MarkerHandle(2)));
+        assert_eq!(router.popup_handle_for_request(1), Some(PopupHandle(4)));
     }
 }
