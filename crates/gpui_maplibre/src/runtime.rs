@@ -1,5 +1,7 @@
+use crate::MapCommand;
 use crate::event::MapLibreEvent;
 use crate::ids::{ControlHandle, MapHandle, MarkerHandle, PopupHandle};
+use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +36,149 @@ pub enum EventRouterAction {
     },
     Emit(MapLibreEvent),
     Error(RoutedError),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeCommandAction {
+    Dispatch(MapCommand),
+    Queued,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RuntimeCommandQueue {
+    dom_ready: bool,
+    initialized_handle: Option<MapHandle>,
+    ready_handle: Option<MapHandle>,
+    pending_commands: VecDeque<MapCommand>,
+}
+
+impl RuntimeCommandQueue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn is_dom_ready(&self) -> bool {
+        self.dom_ready
+    }
+
+    pub fn initialized_handle(&self) -> Option<MapHandle> {
+        self.initialized_handle
+    }
+
+    pub fn ready_handle(&self) -> Option<MapHandle> {
+        self.ready_handle
+    }
+
+    pub fn map_handle(&self) -> Option<MapHandle> {
+        self.ready_handle.or(self.initialized_handle)
+    }
+
+    pub fn is_map_ready(&self) -> bool {
+        self.ready_handle.is_some()
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.pending_commands.len()
+    }
+
+    pub fn pending_commands(&self) -> impl Iterator<Item = &MapCommand> {
+        self.pending_commands.iter()
+    }
+
+    pub fn submit_command(&mut self, command: MapCommand) -> RuntimeCommandAction {
+        if self.can_dispatch(&command) {
+            RuntimeCommandAction::Dispatch(command)
+        } else {
+            self.pending_commands.push_back(command);
+            RuntimeCommandAction::Queued
+        }
+    }
+
+    pub fn reduce_event(&mut self, event: &MapLibreEvent) -> Vec<MapCommand> {
+        match event {
+            MapLibreEvent::DomReady => {
+                self.dom_ready = true;
+                self.drain_dispatchable_commands()
+            }
+            MapLibreEvent::Initialized { handle } => {
+                self.initialized_handle = Some(*handle);
+                Vec::new()
+            }
+            MapLibreEvent::Ready { handle } => {
+                self.initialized_handle.get_or_insert(*handle);
+                self.ready_handle = Some(*handle);
+                self.drain_dispatchable_commands()
+            }
+            MapLibreEvent::Error { .. }
+            | MapLibreEvent::Click { .. }
+            | MapLibreEvent::Map { .. }
+            | MapLibreEvent::Layer { .. }
+            | MapLibreEvent::NativeControlCreated { .. }
+            | MapLibreEvent::MarkerCreated { .. }
+            | MapLibreEvent::MarkerDrag { .. }
+            | MapLibreEvent::PopupCreated { .. }
+            | MapLibreEvent::Popup { .. } => Vec::new(),
+        }
+    }
+
+    fn can_dispatch(&self, command: &MapCommand) -> bool {
+        match command {
+            MapCommand::Init { .. } => self.dom_ready,
+            MapCommand::Destroy { .. } => self.map_handle().is_some(),
+            MapCommand::Resize { .. }
+            | MapCommand::SetStyle { .. }
+            | MapCommand::FlyTo { .. }
+            | MapCommand::JumpTo { .. }
+            | MapCommand::EaseTo { .. }
+            | MapCommand::FitBounds { .. }
+            | MapCommand::AddSource { .. }
+            | MapCommand::AddGeoJsonSource { .. }
+            | MapCommand::UpdateGeoJsonSource { .. }
+            | MapCommand::RemoveSource { .. }
+            | MapCommand::AddLayer { .. }
+            | MapCommand::RemoveLayer { .. }
+            | MapCommand::SetLayoutProperty { .. }
+            | MapCommand::SetPaintProperty { .. }
+            | MapCommand::SetFilter { .. }
+            | MapCommand::SetLayerZoomRange { .. }
+            | MapCommand::SetFeatureState { .. }
+            | MapCommand::SetTerrain { .. }
+            | MapCommand::SetFog { .. }
+            | MapCommand::SetLight { .. }
+            | MapCommand::AddNativeControl { .. }
+            | MapCommand::RemoveNativeControl { .. }
+            | MapCommand::CreateMarker { .. }
+            | MapCommand::UpdateMarker { .. }
+            | MapCommand::RemoveMarker { .. }
+            | MapCommand::CreatePopup { .. }
+            | MapCommand::UpdatePopup { .. }
+            | MapCommand::RemovePopup { .. }
+            | MapCommand::SubscribeMapEvents { .. }
+            | MapCommand::UnsubscribeMapEvents { .. }
+            | MapCommand::SubscribeLayerEvents { .. }
+            | MapCommand::UnsubscribeLayerEvents { .. }
+            | MapCommand::SubscribeMarkerDragEvents { .. }
+            | MapCommand::UnsubscribeMarkerDragEvents { .. }
+            | MapCommand::SubscribePopupEvents { .. }
+            | MapCommand::UnsubscribePopupEvents { .. } => self.is_map_ready(),
+        }
+    }
+
+    fn drain_dispatchable_commands(&mut self) -> Vec<MapCommand> {
+        let mut remaining = VecDeque::new();
+        let mut dispatchable = Vec::new();
+
+        while let Some(command) = self.pending_commands.pop_front() {
+            if self.can_dispatch(&command) {
+                dispatchable.push(command);
+            } else {
+                remaining.push_back(command);
+            }
+        }
+
+        self.pending_commands = remaining;
+        dispatchable
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -187,6 +332,18 @@ mod tests {
         PopupLifecycleEventKind,
     };
     use serde_json::json;
+
+    fn init_command() -> MapCommand {
+        MapCommand::Init {
+            options: crate::MapInitOptions::default(),
+        }
+    }
+
+    fn resize_command() -> MapCommand {
+        MapCommand::Resize {
+            handle: MapHandle(1),
+        }
+    }
 
     #[test]
     fn event_router_updates_readiness_and_map_handle() {
@@ -366,5 +523,68 @@ mod tests {
             router.route_event(popup.clone()),
             EventRouterAction::Emit(popup)
         );
+    }
+
+    #[test]
+    fn runtime_ready_queue_holds_init_until_dom_ready() {
+        let mut queue = RuntimeCommandQueue::new();
+
+        assert_eq!(
+            queue.submit_command(init_command()),
+            RuntimeCommandAction::Queued
+        );
+        assert_eq!(queue.pending_len(), 1);
+
+        let dispatch = queue.reduce_event(&MapLibreEvent::DomReady);
+
+        assert!(queue.is_dom_ready());
+        assert_eq!(dispatch, vec![init_command()]);
+        assert_eq!(queue.pending_len(), 0);
+    }
+
+    #[test]
+    fn runtime_ready_queue_holds_map_commands_until_ready() {
+        let mut queue = RuntimeCommandQueue::new();
+
+        assert_eq!(
+            queue.submit_command(resize_command()),
+            RuntimeCommandAction::Queued
+        );
+        assert_eq!(
+            queue.reduce_event(&MapLibreEvent::Initialized {
+                handle: MapHandle(1),
+            }),
+            Vec::<MapCommand>::new()
+        );
+        assert_eq!(queue.initialized_handle(), Some(MapHandle(1)));
+        assert_eq!(queue.pending_len(), 1);
+
+        let dispatch = queue.reduce_event(&MapLibreEvent::Ready {
+            handle: MapHandle(1),
+        });
+
+        assert!(queue.is_map_ready());
+        assert_eq!(queue.ready_handle(), Some(MapHandle(1)));
+        assert_eq!(dispatch, vec![resize_command()]);
+        assert_eq!(queue.pending_len(), 0);
+    }
+
+    #[test]
+    fn runtime_ready_queue_dispatches_immediately_after_ready() {
+        let mut queue = RuntimeCommandQueue::new();
+        queue.reduce_event(&MapLibreEvent::DomReady);
+        queue.reduce_event(&MapLibreEvent::Ready {
+            handle: MapHandle(1),
+        });
+
+        assert_eq!(
+            queue.submit_command(init_command()),
+            RuntimeCommandAction::Dispatch(init_command())
+        );
+        assert_eq!(
+            queue.submit_command(resize_command()),
+            RuntimeCommandAction::Dispatch(resize_command())
+        );
+        assert_eq!(queue.pending_len(), 0);
     }
 }

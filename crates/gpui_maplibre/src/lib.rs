@@ -36,7 +36,9 @@ pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
 pub use popup::PopupOptions;
 pub use popup_content::PopupContent;
-pub use runtime::{EventRouter, EventRouterAction, RoutedError};
+pub use runtime::{
+    EventRouter, EventRouterAction, RoutedError, RuntimeCommandAction, RuntimeCommandQueue,
+};
 pub use source::{SourceType, geojson_source, raster_source, vector_source};
 pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
