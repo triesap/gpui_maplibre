@@ -1,0 +1,8 @@
+{
+  "name": "gpui-maplibre-js-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test bridge.test.js"
+  }
+}
