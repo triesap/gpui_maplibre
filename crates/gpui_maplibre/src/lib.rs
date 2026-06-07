@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod asset;
 pub mod command;
 pub mod control;
 pub mod controller;
@@ -19,6 +20,7 @@ pub mod types;
 
 mod script;
 
+pub use asset::{AssetMode, MapLibreAssetUrls};
 pub use command::MapCommand;
 pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOptions};
 pub use controller::MapController;
