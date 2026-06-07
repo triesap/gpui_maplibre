@@ -10,6 +10,7 @@ pub mod options;
 pub mod popup;
 pub mod popup_content;
 pub mod subscription;
+pub mod transport;
 pub mod types;
 
 mod script;
@@ -31,6 +32,7 @@ pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
     PopupEventSubscription,
 };
+pub use transport::{CommandTransport, FakeTransport};
 pub use types::{Bounds, LngLat, MapControlAnchor};
 
 #[cfg(test)]
