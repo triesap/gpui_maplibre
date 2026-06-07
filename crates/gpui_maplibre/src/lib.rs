@@ -3,8 +3,12 @@
 mod error;
 
 pub mod ids;
+pub mod options;
+pub mod types;
 
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
+pub use options::{MapInitOptions, NativeControlOptions};
+pub use types::{Bounds, LngLat, MapControlAnchor};
 
 #[cfg(test)]
 mod tests {
