@@ -33,6 +33,27 @@ export function fly_to(handle, lng, lat, zoom, duration_ms) {
     record("fly_to", { handle, lng, lat, zoom, duration_ms });
 }
 
+export function jump_to(handle, lng, lat, zoom, bearing, pitch) {
+    record("jump_to", { handle, lng, lat, zoom, bearing, pitch });
+}
+
+export function ease_to(handle, lng, lat, zoom, bearing, pitch, duration_ms) {
+    record("ease_to", { handle, lng, lat, zoom, bearing, pitch, duration_ms });
+}
+
+export function fit_bounds(handle, west, south, east, north, padding, duration_ms, max_zoom) {
+    record("fit_bounds", {
+        handle,
+        west,
+        south,
+        east,
+        north,
+        padding,
+        duration_ms,
+        max_zoom,
+    });
+}
+
 export function add_source(handle, source_id, source_spec) {
     record("add_source", { handle, source_id, source_spec });
 }
