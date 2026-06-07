@@ -1,13 +1,17 @@
-use crate::ids::{LayerId, MapHandle, SourceId};
+use crate::control::NativeControlKind;
+use crate::ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
+use crate::marker::MarkerOptions;
 use crate::options::MapInitOptions;
+use crate::popup::PopupOptions;
 use crate::transport::CommandTransport;
-use crate::types::{Bounds, LngLat};
+use crate::types::{Bounds, LngLat, MapControlAnchor};
 use crate::{MapCommand, MapLibreError, Result};
 
 #[derive(Clone, Debug)]
 pub struct MapController<T> {
     transport: T,
     handle: Option<MapHandle>,
+    next_request_id: u64,
 }
 
 impl<T> MapController<T> {
@@ -15,6 +19,7 @@ impl<T> MapController<T> {
         Self {
             transport,
             handle: None,
+            next_request_id: 1,
         }
     }
 
@@ -22,6 +27,7 @@ impl<T> MapController<T> {
         Self {
             transport,
             handle: Some(handle),
+            next_request_id: 1,
         }
     }
 
@@ -35,6 +41,14 @@ impl<T> MapController<T> {
 
     pub fn clear_handle(&mut self) {
         self.handle = None;
+    }
+
+    pub fn next_request_id(&self) -> u64 {
+        self.next_request_id
+    }
+
+    pub fn set_next_request_id(&mut self, next_request_id: u64) {
+        self.next_request_id = next_request_id;
     }
 
     pub fn transport(&self) -> &T {
@@ -337,8 +351,87 @@ impl<T: CommandTransport> MapController<T> {
         self.send(MapCommand::SetLight { handle, light })
     }
 
+    pub fn add_native_control(
+        &mut self,
+        kind: NativeControlKind,
+        anchor: Option<MapControlAnchor>,
+        options: Option<serde_json::Value>,
+    ) -> Result<u64> {
+        let handle =
+            self.require_handle("add_native_control requires an initialized map handle")?;
+
+        self.send_request_command(|request_id| MapCommand::AddNativeControl {
+            request_id,
+            handle,
+            kind,
+            anchor,
+            options,
+        })
+    }
+
+    pub fn remove_native_control(&mut self, control_handle: ControlHandle) -> Result<()> {
+        self.send(MapCommand::RemoveNativeControl { control_handle })
+    }
+
+    pub fn create_marker(&mut self, options: MarkerOptions) -> Result<u64> {
+        let handle = self.require_handle("create_marker requires an initialized map handle")?;
+
+        self.send_request_command(|request_id| MapCommand::CreateMarker {
+            request_id,
+            handle,
+            options,
+        })
+    }
+
+    pub fn update_marker(
+        &mut self,
+        marker_handle: MarkerHandle,
+        options: MarkerOptions,
+    ) -> Result<()> {
+        self.send(MapCommand::UpdateMarker {
+            marker_handle,
+            options,
+        })
+    }
+
+    pub fn remove_marker(&mut self, marker_handle: MarkerHandle) -> Result<()> {
+        self.send(MapCommand::RemoveMarker { marker_handle })
+    }
+
+    pub fn create_popup(&mut self, options: PopupOptions) -> Result<u64> {
+        let handle = self.require_handle("create_popup requires an initialized map handle")?;
+
+        self.send_request_command(|request_id| MapCommand::CreatePopup {
+            request_id,
+            handle,
+            options,
+        })
+    }
+
+    pub fn update_popup(&mut self, popup_handle: PopupHandle, options: PopupOptions) -> Result<()> {
+        self.send(MapCommand::UpdatePopup {
+            popup_handle,
+            options,
+        })
+    }
+
+    pub fn remove_popup(&mut self, popup_handle: PopupHandle) -> Result<()> {
+        self.send(MapCommand::RemovePopup { popup_handle })
+    }
+
     fn send(&mut self, command: MapCommand) -> Result<()> {
         self.transport.send_command(command)
+    }
+
+    fn send_request_command(
+        &mut self,
+        make_command: impl FnOnce(u64) -> MapCommand,
+    ) -> Result<u64> {
+        let request_id = self.next_request_id;
+
+        self.send(make_command(request_id))?;
+        self.next_request_id += 1;
+        Ok(request_id)
     }
 
     fn require_handle(&self, context: &'static str) -> Result<MapHandle> {
@@ -350,8 +443,34 @@ impl<T: CommandTransport> MapController<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FakeTransport, LayerType, SourceType};
+    use crate::{FakeTransport, LayerType, PopupContent, SourceType};
     use serde_json::json;
+
+    fn marker_options(lng: f64, lat: f64) -> MarkerOptions {
+        MarkerOptions {
+            lng,
+            lat,
+            draggable: false,
+            anchor: None,
+            offset_x: None,
+            offset_y: None,
+            rotation: None,
+        }
+    }
+
+    fn popup_options(lng: f64, lat: f64, content: impl Into<String>) -> PopupOptions {
+        PopupOptions {
+            lng,
+            lat,
+            content: PopupContent::Text(content.into()),
+            close_button: Some(true),
+            close_on_click: Some(false),
+            anchor: None,
+            offset_x: None,
+            offset_y: None,
+            max_width: None,
+        }
+    }
 
     #[test]
     fn controller_lifecycle_sends_init_resize_set_style_and_destroy() {
@@ -740,5 +859,148 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn controller_controls_sends_control_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        let request_id = controller
+            .add_native_control(
+                NativeControlKind::Navigation,
+                Some(MapControlAnchor::TopRight),
+                Some(json!({"showCompass": true})),
+            )
+            .unwrap();
+        controller.remove_native_control(ControlHandle(9)).unwrap();
+
+        assert_eq!(request_id, 1);
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::AddNativeControl {
+                    request_id: 1,
+                    handle: MapHandle(1),
+                    kind: NativeControlKind::Navigation,
+                    anchor: Some(MapControlAnchor::TopRight),
+                    options: Some(json!({"showCompass": true})),
+                },
+                MapCommand::RemoveNativeControl {
+                    control_handle: ControlHandle(9),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn controller_markers_sends_marker_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        let request_id = controller
+            .create_marker(MarkerOptions {
+                draggable: true,
+                ..marker_options(-123.1, 49.2)
+            })
+            .unwrap();
+        controller
+            .update_marker(
+                MarkerHandle(10),
+                MarkerOptions {
+                    rotation: Some(45.0),
+                    ..marker_options(-123.2, 49.3)
+                },
+            )
+            .unwrap();
+        controller.remove_marker(MarkerHandle(10)).unwrap();
+
+        assert_eq!(request_id, 1);
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::CreateMarker {
+                    request_id: 1,
+                    handle: MapHandle(1),
+                    options: MarkerOptions {
+                        draggable: true,
+                        ..marker_options(-123.1, 49.2)
+                    },
+                },
+                MapCommand::UpdateMarker {
+                    marker_handle: MarkerHandle(10),
+                    options: MarkerOptions {
+                        rotation: Some(45.0),
+                        ..marker_options(-123.2, 49.3)
+                    },
+                },
+                MapCommand::RemoveMarker {
+                    marker_handle: MarkerHandle(10),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn controller_popups_sends_popup_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        let request_id = controller
+            .create_popup(popup_options(-123.1, 49.2, "Harbor"))
+            .unwrap();
+        controller
+            .update_popup(PopupHandle(11), popup_options(-123.2, 49.3, "Updated"))
+            .unwrap();
+        controller.remove_popup(PopupHandle(11)).unwrap();
+
+        assert_eq!(request_id, 1);
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::CreatePopup {
+                    request_id: 1,
+                    handle: MapHandle(1),
+                    options: popup_options(-123.1, 49.2, "Harbor"),
+                },
+                MapCommand::UpdatePopup {
+                    popup_handle: PopupHandle(11),
+                    options: popup_options(-123.2, 49.3, "Updated"),
+                },
+                MapCommand::RemovePopup {
+                    popup_handle: PopupHandle(11),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn request_ids_increment_after_successful_request_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        assert_eq!(controller.next_request_id(), 1);
+        assert_eq!(
+            controller
+                .create_marker(marker_options(-123.1, 49.2))
+                .unwrap(),
+            1
+        );
+        assert_eq!(controller.next_request_id(), 2);
+
+        controller.transport_mut().fail_next("bridge closed");
+        let error = controller
+            .create_popup(popup_options(-123.2, 49.3, "Retry me"))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MapLibre transport failed: bridge closed"
+        );
+        assert_eq!(controller.next_request_id(), 2);
+
+        assert_eq!(
+            controller
+                .create_popup(popup_options(-123.2, 49.3, "Retry me"))
+                .unwrap(),
+            2
+        );
+        assert_eq!(controller.next_request_id(), 3);
     }
 }
