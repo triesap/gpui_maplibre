@@ -2,6 +2,10 @@
 
 mod error;
 
+pub mod ids;
+
+pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
+
 #[cfg(test)]
 mod tests {
     #[test]
