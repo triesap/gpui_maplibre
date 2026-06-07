@@ -146,6 +146,107 @@ export function dispatch(command, target = default_target()) {
             return { ok: true };
         }
 
+        if (command.type === "add_source") {
+            mapCore.add_source(command.handle, command.source_id, command.source_spec);
+            return { ok: true };
+        }
+
+        if (command.type === "add_geojson_source") {
+            mapCore.add_geojson_source(
+                command.handle,
+                command.source_id,
+                command.geojson,
+                command.promote_id,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "update_geojson_source") {
+            mapCore.update_geojson_source(command.handle, command.source_id, command.geojson);
+            return { ok: true };
+        }
+
+        if (command.type === "remove_source") {
+            mapCore.remove_source(command.handle, command.source_id);
+            return { ok: true };
+        }
+
+        if (command.type === "add_layer") {
+            mapCore.add_layer(
+                command.handle,
+                command.layer_id,
+                command.layer_spec,
+                command.before_id,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "remove_layer") {
+            mapCore.remove_layer(command.handle, command.layer_id);
+            return { ok: true };
+        }
+
+        if (command.type === "set_layout_property") {
+            mapCore.set_layout_property(
+                command.handle,
+                command.layer_id,
+                command.property_name,
+                command.value,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "set_paint_property") {
+            mapCore.set_paint_property(
+                command.handle,
+                command.layer_id,
+                command.property_name,
+                command.value,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "set_filter") {
+            mapCore.set_filter(command.handle, command.layer_id, command.filter);
+            return { ok: true };
+        }
+
+        if (command.type === "set_layer_zoom_range") {
+            mapCore.set_layer_zoom_range(
+                command.handle,
+                command.layer_id,
+                command.min_zoom,
+                command.max_zoom,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "set_feature_state") {
+            mapCore.set_feature_state(
+                command.handle,
+                command.source_id,
+                command.source_layer,
+                command.feature_id,
+                command.state,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "set_terrain") {
+            mapCore.set_terrain(command.handle, command.terrain);
+            return { ok: true };
+        }
+
+        if (command.type === "set_fog") {
+            mapCore.set_fog(command.handle, command.fog);
+            return { ok: true };
+        }
+
+        if (command.type === "set_light") {
+            mapCore.set_light(command.handle, command.light);
+            return { ok: true };
+        }
+
         post_error("unknown_command", `unknown command type: ${command.type}`, target);
         return { ok: false };
     }

@@ -206,6 +206,255 @@ test("dispatch camera commands call map core with expected arguments", () => {
     ]);
 });
 
+test("dispatch source commands pass JSON payloads through", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    const sourceSpec = { type: "vector", url: "mapbox://tiles" };
+    const emptyCollection = { type: "FeatureCollection", features: [] };
+    const updatedCollection = {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", id: "se-1" }],
+    };
+
+    for (const command of [
+        {
+            type: "add_source",
+            handle: 1,
+            source_id: "tiles",
+            source_spec: sourceSpec,
+        },
+        {
+            type: "add_geojson_source",
+            handle: 1,
+            source_id: "places",
+            geojson: emptyCollection,
+            promote_id: "id",
+        },
+        {
+            type: "update_geojson_source",
+            handle: 1,
+            source_id: "places",
+            geojson: updatedCollection,
+        },
+        {
+            type: "remove_source",
+            handle: 1,
+            source_id: "tiles",
+        },
+    ]) {
+        assert.deepEqual(dispatch(command, target), { ok: true });
+    }
+
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "add_source",
+            payload: {
+                handle: 1,
+                source_id: "tiles",
+                source_spec: sourceSpec,
+            },
+        },
+        {
+            name: "add_geojson_source",
+            payload: {
+                handle: 1,
+                source_id: "places",
+                geojson: emptyCollection,
+                promote_id: "id",
+            },
+        },
+        {
+            name: "update_geojson_source",
+            payload: {
+                handle: 1,
+                source_id: "places",
+                geojson: updatedCollection,
+            },
+        },
+        {
+            name: "remove_source",
+            payload: {
+                handle: 1,
+                source_id: "tiles",
+            },
+        },
+    ]);
+});
+
+test("dispatch layer and property commands pass style-spec values through", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    const layerSpec = { type: "circle", source: "places" };
+    const filter = ["==", ["get", "kind"], "harbor"];
+
+    for (const command of [
+        {
+            type: "add_layer",
+            handle: 1,
+            layer_id: "places-circle",
+            layer_spec: layerSpec,
+            before_id: "labels",
+        },
+        {
+            type: "set_layout_property",
+            handle: 1,
+            layer_id: "places-circle",
+            property_name: "visibility",
+            value: "none",
+        },
+        {
+            type: "set_paint_property",
+            handle: 1,
+            layer_id: "places-circle",
+            property_name: "circle-color",
+            value: "#2b6cb0",
+        },
+        {
+            type: "set_filter",
+            handle: 1,
+            layer_id: "places-circle",
+            filter,
+        },
+        {
+            type: "set_layer_zoom_range",
+            handle: 1,
+            layer_id: "places-circle",
+            min_zoom: 4,
+            max_zoom: 12,
+        },
+        {
+            type: "remove_layer",
+            handle: 1,
+            layer_id: "places-circle",
+        },
+    ]) {
+        assert.deepEqual(dispatch(command, target), { ok: true });
+    }
+
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "add_layer",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+                layer_spec: layerSpec,
+                before_id: "labels",
+            },
+        },
+        {
+            name: "set_layout_property",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+                property_name: "visibility",
+                value: "none",
+            },
+        },
+        {
+            name: "set_paint_property",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+                property_name: "circle-color",
+                value: "#2b6cb0",
+            },
+        },
+        {
+            name: "set_filter",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+                filter,
+            },
+        },
+        {
+            name: "set_layer_zoom_range",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+                min_zoom: 4,
+                max_zoom: 12,
+            },
+        },
+        {
+            name: "remove_layer",
+            payload: {
+                handle: 1,
+                layer_id: "places-circle",
+            },
+        },
+    ]);
+});
+
+test("dispatch feature-state and scene commands pass values through", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    for (const command of [
+        {
+            type: "set_feature_state",
+            handle: 1,
+            source_id: "places",
+            source_layer: "settlements",
+            feature_id: "se-1",
+            state: { selected: true },
+        },
+        {
+            type: "set_terrain",
+            handle: 1,
+            terrain: { source: "terrain", exaggeration: 1.2 },
+        },
+        {
+            type: "set_fog",
+            handle: 1,
+            fog: null,
+        },
+        {
+            type: "set_light",
+            handle: 1,
+            light: { anchor: "viewport", intensity: 0.4 },
+        },
+    ]) {
+        assert.deepEqual(dispatch(command, target), { ok: true });
+    }
+
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "set_feature_state",
+            payload: {
+                handle: 1,
+                source_id: "places",
+                source_layer: "settlements",
+                feature_id: "se-1",
+                state: { selected: true },
+            },
+        },
+        {
+            name: "set_terrain",
+            payload: {
+                handle: 1,
+                terrain: { source: "terrain", exaggeration: 1.2 },
+            },
+        },
+        {
+            name: "set_fog",
+            payload: {
+                handle: 1,
+                fog: null,
+            },
+        },
+        {
+            name: "set_light",
+            payload: {
+                handle: 1,
+                light: { anchor: "viewport", intensity: 0.4 },
+            },
+        },
+    ]);
+});
+
 test("post_dom_ready emits the dom_ready IPC event", () => {
     const target = test_target();
 
