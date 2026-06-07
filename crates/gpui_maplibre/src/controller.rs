@@ -81,10 +81,29 @@ impl<T: CommandTransport> MapController<T> {
         Ok(())
     }
 
+    pub fn destroy_if_initialized(&mut self) -> Result<bool> {
+        let Some(handle) = self.handle else {
+            return Ok(false);
+        };
+
+        self.send(MapCommand::Destroy { handle })?;
+        self.handle = None;
+        Ok(true)
+    }
+
     pub fn resize(&mut self) -> Result<()> {
         let handle = self.require_handle("resize requires an initialized map handle")?;
 
         self.send(MapCommand::Resize { handle })
+    }
+
+    pub fn resize_if_initialized(&mut self) -> Result<bool> {
+        let Some(handle) = self.handle else {
+            return Ok(false);
+        };
+
+        self.send(MapCommand::Resize { handle })?;
+        Ok(true)
     }
 
     pub fn set_style(&mut self, style_url: impl Into<String>) -> Result<()> {
@@ -601,6 +620,39 @@ mod tests {
             "MapLibre transport failed: bridge closed"
         );
         assert_eq!(controller.handle(), Some(MapHandle(1)));
+    }
+
+    #[test]
+    fn lifecycle_cleanup_controller_destroy_if_initialized_is_idempotent() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        assert!(controller.destroy_if_initialized().unwrap());
+        assert!(!controller.destroy_if_initialized().unwrap());
+
+        assert_eq!(controller.handle(), None);
+        assert_eq!(
+            controller.transport().commands(),
+            &[MapCommand::Destroy {
+                handle: MapHandle(1),
+            }]
+        );
+    }
+
+    #[test]
+    fn lifecycle_cleanup_controller_resize_if_initialized_skips_missing_handle() {
+        let mut controller = MapController::new(FakeTransport::new());
+
+        assert!(!controller.resize_if_initialized().unwrap());
+        assert!(controller.transport().commands().is_empty());
+
+        controller.set_handle(MapHandle(1));
+        assert!(controller.resize_if_initialized().unwrap());
+        assert_eq!(
+            controller.transport().commands(),
+            &[MapCommand::Resize {
+                handle: MapHandle(1),
+            }]
+        );
     }
 
     #[test]

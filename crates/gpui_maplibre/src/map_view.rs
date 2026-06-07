@@ -1,7 +1,7 @@
 use crate::asset::private_index_html;
-use crate::runtime::{EventRouter, EventRouterAction, route_ipc_message};
+use crate::runtime::{EventRouter, EventRouterAction, ViewLifecycle, route_ipc_message};
 use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapInitOptions};
-use crate::{MapLibreError, Result};
+use crate::{MapCommand, MapLibreError, Result};
 use gpui::{Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div};
 use std::marker::PhantomData;
 
@@ -97,6 +97,7 @@ pub struct MapLibreView<T = FakeTransport> {
     config: MapLibreViewConfig,
     controller: MapController<T>,
     router: EventRouter,
+    lifecycle: ViewLifecycle,
     webview: Option<Entity<gpui_wry::WebView>>,
     last_ipc_error: Option<String>,
 }
@@ -117,6 +118,7 @@ impl<T> MapLibreView<T> {
             config,
             controller,
             router: EventRouter::new(),
+            lifecycle: ViewLifecycle::new(),
             webview: None,
             last_ipc_error: None,
         }
@@ -142,6 +144,14 @@ impl<T> MapLibreView<T> {
         &mut self.router
     }
 
+    pub fn lifecycle(&self) -> &ViewLifecycle {
+        &self.lifecycle
+    }
+
+    pub fn lifecycle_mut(&mut self) -> &mut ViewLifecycle {
+        &mut self.lifecycle
+    }
+
     pub fn webview(&self) -> Option<&Entity<gpui_wry::WebView>> {
         self.webview.as_ref()
     }
@@ -158,10 +168,24 @@ impl<T> MapLibreView<T> {
         self.last_ipc_error.as_deref()
     }
 
+    pub fn resize_command(&self) -> Option<MapCommand> {
+        self.lifecycle.resize_command()
+    }
+
+    pub fn cleanup_command(&mut self) -> Option<MapCommand> {
+        let command = self.lifecycle.cleanup_command();
+
+        if command.is_some() {
+            self.controller.clear_handle();
+        }
+
+        command
+    }
+
     pub fn handle_ipc_message(&mut self, message: &str) -> Result<EventRouterAction> {
         match route_ipc_message(&mut self.router, message) {
             Ok(action) => {
-                self.sync_controller_handle(&action);
+                self.sync_runtime_state(&action);
                 self.last_ipc_error = None;
                 Ok(action)
             }
@@ -172,7 +196,9 @@ impl<T> MapLibreView<T> {
         }
     }
 
-    fn sync_controller_handle(&mut self, action: &EventRouterAction) {
+    fn sync_runtime_state(&mut self, action: &EventRouterAction) {
+        self.lifecycle.reduce_action(action);
+
         match action {
             EventRouterAction::Initialized { handle } | EventRouterAction::Ready { handle } => {
                 self.controller.set_handle(*handle);
@@ -184,6 +210,22 @@ impl<T> MapLibreView<T> {
             | EventRouterAction::Emit(_)
             | EventRouterAction::Error(_) => {}
         }
+    }
+}
+
+impl<T: CommandTransport> MapLibreView<T> {
+    pub fn resize(&mut self) -> Result<bool> {
+        self.controller.resize_if_initialized()
+    }
+
+    pub fn cleanup(&mut self) -> Result<bool> {
+        let did_cleanup = self.controller.destroy_if_initialized()?;
+
+        if did_cleanup {
+            self.lifecycle.clear();
+        }
+
+        Ok(did_cleanup)
     }
 }
 
@@ -253,7 +295,53 @@ mod tests {
             }
         );
         assert_eq!(view.router().map_handle(), Some(MapHandle(7)));
+        assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
         assert!(view.last_ipc_error().is_none());
+    }
+
+    #[test]
+    fn lifecycle_cleanup_map_view_exposes_resize_and_cleanup_commands() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+        view.handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+
+        assert_eq!(
+            view.resize_command(),
+            Some(MapCommand::Resize {
+                handle: MapHandle(7),
+            })
+        );
+        assert_eq!(
+            view.cleanup_command(),
+            Some(MapCommand::Destroy {
+                handle: MapHandle(7),
+            })
+        );
+        assert_eq!(view.cleanup_command(), None);
+        assert_eq!(view.controller().handle(), None);
+    }
+
+    #[test]
+    fn lifecycle_cleanup_map_view_can_dispatch_through_controller() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+        view.handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+
+        assert!(view.resize().unwrap());
+        assert!(view.cleanup().unwrap());
+        assert!(!view.cleanup().unwrap());
+
+        assert_eq!(
+            view.controller().transport().commands(),
+            &[
+                MapCommand::Resize {
+                    handle: MapHandle(7),
+                },
+                MapCommand::Destroy {
+                    handle: MapHandle(7),
+                },
+            ]
+        );
     }
 }

@@ -181,6 +181,81 @@ impl RuntimeCommandQueue {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ViewLifecycle {
+    map_handle: Option<MapHandle>,
+    cleanup_emitted: bool,
+}
+
+impl ViewLifecycle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn map_handle(&self) -> Option<MapHandle> {
+        self.map_handle
+    }
+
+    pub fn is_cleanup_emitted(&self) -> bool {
+        self.cleanup_emitted
+    }
+
+    pub fn reduce_event(&mut self, event: &MapLibreEvent) {
+        match event {
+            MapLibreEvent::Initialized { handle } | MapLibreEvent::Ready { handle } => {
+                self.map_handle = Some(*handle);
+                self.cleanup_emitted = false;
+            }
+            MapLibreEvent::DomReady
+            | MapLibreEvent::Error { .. }
+            | MapLibreEvent::Click { .. }
+            | MapLibreEvent::Map { .. }
+            | MapLibreEvent::Layer { .. }
+            | MapLibreEvent::NativeControlCreated { .. }
+            | MapLibreEvent::MarkerCreated { .. }
+            | MapLibreEvent::MarkerDrag { .. }
+            | MapLibreEvent::PopupCreated { .. }
+            | MapLibreEvent::Popup { .. } => {}
+        }
+    }
+
+    pub fn reduce_action(&mut self, action: &EventRouterAction) {
+        match action {
+            EventRouterAction::Initialized { handle } | EventRouterAction::Ready { handle } => {
+                self.map_handle = Some(*handle);
+                self.cleanup_emitted = false;
+            }
+            EventRouterAction::DomReady
+            | EventRouterAction::NativeControlCreated { .. }
+            | EventRouterAction::MarkerCreated { .. }
+            | EventRouterAction::PopupCreated { .. }
+            | EventRouterAction::Emit(_)
+            | EventRouterAction::Error(_) => {}
+        }
+    }
+
+    pub fn resize_command(&self) -> Option<MapCommand> {
+        self.map_handle.map(|handle| MapCommand::Resize { handle })
+    }
+
+    pub fn cleanup_command(&mut self) -> Option<MapCommand> {
+        let handle = self.map_handle?;
+
+        if self.cleanup_emitted {
+            return None;
+        }
+
+        self.cleanup_emitted = true;
+        self.map_handle = None;
+        Some(MapCommand::Destroy { handle })
+    }
+
+    pub fn clear(&mut self) {
+        self.map_handle = None;
+        self.cleanup_emitted = true;
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EventRouter {
     dom_ready: bool,
@@ -594,6 +669,62 @@ mod tests {
             RuntimeCommandAction::Dispatch(resize_command())
         );
         assert_eq!(queue.pending_len(), 0);
+    }
+
+    #[test]
+    fn lifecycle_cleanup_emits_destroy_once_and_resizes_ready_map() {
+        let mut lifecycle = ViewLifecycle::new();
+
+        assert_eq!(lifecycle.resize_command(), None);
+        assert_eq!(lifecycle.cleanup_command(), None);
+
+        lifecycle.reduce_event(&MapLibreEvent::Ready {
+            handle: MapHandle(1),
+        });
+
+        assert_eq!(
+            lifecycle.resize_command(),
+            Some(MapCommand::Resize {
+                handle: MapHandle(1),
+            })
+        );
+        assert_eq!(
+            lifecycle.cleanup_command(),
+            Some(MapCommand::Destroy {
+                handle: MapHandle(1),
+            })
+        );
+        assert!(lifecycle.is_cleanup_emitted());
+        assert_eq!(lifecycle.cleanup_command(), None);
+        assert_eq!(lifecycle.resize_command(), None);
+    }
+
+    #[test]
+    fn lifecycle_cleanup_resets_for_new_map_handle() {
+        let mut lifecycle = ViewLifecycle::new();
+
+        lifecycle.reduce_action(&EventRouterAction::Initialized {
+            handle: MapHandle(1),
+        });
+        assert_eq!(
+            lifecycle.cleanup_command(),
+            Some(MapCommand::Destroy {
+                handle: MapHandle(1),
+            })
+        );
+
+        lifecycle.reduce_action(&EventRouterAction::Ready {
+            handle: MapHandle(2),
+        });
+
+        assert_eq!(lifecycle.map_handle(), Some(MapHandle(2)));
+        assert!(!lifecycle.is_cleanup_emitted());
+        assert_eq!(
+            lifecycle.resize_command(),
+            Some(MapCommand::Resize {
+                handle: MapHandle(2),
+            })
+        );
     }
 
     #[test]

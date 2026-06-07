@@ -42,7 +42,7 @@ pub use popup::PopupOptions;
 pub use popup_content::PopupContent;
 pub use runtime::{
     EventRouter, EventRouterAction, RoutedError, RuntimeCommandAction, RuntimeCommandQueue,
-    route_ipc_message,
+    ViewLifecycle, route_ipc_message,
 };
 pub use source::{SourceType, geojson_source, raster_source, vector_source};
 pub use subscription::{
