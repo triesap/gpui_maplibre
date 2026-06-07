@@ -1,5 +1,6 @@
 const INDEX_HTML_TEMPLATE: &str = include_str!("../assets/index.html");
 const GPUI_MAPLIBRE_CSS: &str = include_str!("../assets/gpui_maplibre.css");
+const MAP_CORE_JS: &str = include_str!("../assets/map_core.js");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +64,10 @@ pub fn private_index_html(asset_mode: &AssetMode) -> String {
 
 pub fn gpui_maplibre_css() -> &'static str {
     GPUI_MAPLIBRE_CSS
+}
+
+pub fn map_core_js() -> &'static str {
+    MAP_CORE_JS
 }
 
 fn escape_html_attr(value: &str) -> String {
@@ -135,5 +140,28 @@ mod tests {
         assert!(css.contains("#map"));
         assert!(css.contains("height: 100%"));
         assert!(css.contains("overflow: hidden"));
+    }
+
+    #[test]
+    fn map_core_asset_exports_reference_bridge_functions() {
+        let js = map_core_js();
+
+        assert!(js.contains("private gpui_maplibre implementation detail"));
+        for export_name in [
+            "init_map",
+            "destroy_map",
+            "fly_to",
+            "add_source",
+            "add_layer",
+            "create_marker",
+            "create_popup",
+            "register_on_map_events",
+            "register_on_layer_events",
+        ] {
+            assert!(
+                js.contains(&format!("export function {export_name}(")),
+                "missing map_core export {export_name}"
+            );
+        }
     }
 }
