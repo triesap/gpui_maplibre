@@ -11,6 +11,7 @@ pub mod marker;
 pub mod options;
 pub mod popup;
 pub mod popup_content;
+pub mod runtime;
 pub mod source;
 pub mod subscription;
 pub mod transport;
@@ -33,6 +34,7 @@ pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
 pub use popup::PopupOptions;
 pub use popup_content::PopupContent;
+pub use runtime::{EventRouter, EventRouterAction, RoutedError};
 pub use source::{SourceType, geojson_source, raster_source, vector_source};
 pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,

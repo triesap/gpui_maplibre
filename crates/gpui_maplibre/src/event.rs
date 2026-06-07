@@ -164,6 +164,40 @@ pub enum MapLibreEvent {
     },
 }
 
+impl MapLibreEvent {
+    pub fn request_id(&self) -> Option<u64> {
+        match self {
+            Self::NativeControlCreated { request_id, .. }
+            | Self::MarkerCreated { request_id, .. }
+            | Self::PopupCreated { request_id, .. } => Some(*request_id),
+            Self::DomReady
+            | Self::Initialized { .. }
+            | Self::Ready { .. }
+            | Self::Click { .. }
+            | Self::Map { .. }
+            | Self::Layer { .. }
+            | Self::MarkerDrag { .. }
+            | Self::Popup { .. }
+            | Self::Error { .. } => None,
+        }
+    }
+
+    pub fn map_handle(&self) -> Option<MapHandle> {
+        match self {
+            Self::Initialized { handle } | Self::Ready { handle } => Some(*handle),
+            Self::Map { handle, .. } | Self::Layer { handle, .. } => Some(*handle),
+            Self::DomReady
+            | Self::Click { .. }
+            | Self::NativeControlCreated { .. }
+            | Self::MarkerCreated { .. }
+            | Self::MarkerDrag { .. }
+            | Self::PopupCreated { .. }
+            | Self::Popup { .. }
+            | Self::Error { .. } => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod events_tests {
     use super::*;
