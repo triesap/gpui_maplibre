@@ -28,7 +28,7 @@ pub use error::{MapLibreError, Result};
 pub use event::{
     FeatureHit, LayerEvent, LayerEventKind, LayerFeatureHit, MapClickEvent, MapEvent, MapEventKind,
     MapLibreEvent, MapViewState, MarkerDragEvent, MarkerDragEventKind, PopupLifecycleEvent,
-    PopupLifecycleEventKind,
+    PopupLifecycleEventKind, parse_ipc_event,
 };
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
 pub use layer::{LayerType, background_layer, sourced_layer};

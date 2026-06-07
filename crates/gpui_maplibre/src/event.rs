@@ -1,4 +1,5 @@
 use crate::ids::{ControlHandle, MapHandle, MarkerHandle, PopupHandle};
+use crate::{MapLibreError, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +197,10 @@ impl MapLibreEvent {
             | Self::Error { .. } => None,
         }
     }
+}
+
+pub fn parse_ipc_event(message: &str) -> Result<MapLibreEvent> {
+    serde_json::from_str(message).map_err(MapLibreError::invalid_event)
 }
 
 #[cfg(test)]
@@ -533,5 +538,92 @@ mod events_tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn ipc_event_parser_accepts_bridge_emitted_envelopes() {
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"dom_ready"}"#).unwrap(),
+            MapLibreEvent::DomReady
+        );
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"initialized","handle":1}"#).unwrap(),
+            MapLibreEvent::Initialized {
+                handle: MapHandle(1),
+            }
+        );
+        assert_eq!(
+            parse_ipc_event(
+                r#"{"type":"native_control_created","request_id":10,"control_handle":7}"#
+            )
+            .unwrap(),
+            MapLibreEvent::NativeControlCreated {
+                request_id: 10,
+                control_handle: ControlHandle(7),
+            }
+        );
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"marker_created","request_id":11,"marker_handle":2}"#)
+                .unwrap(),
+            MapLibreEvent::MarkerCreated {
+                request_id: 11,
+                marker_handle: MarkerHandle(2),
+            }
+        );
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"popup_created","request_id":12,"popup_handle":4}"#)
+                .unwrap(),
+            MapLibreEvent::PopupCreated {
+                request_id: 12,
+                popup_handle: PopupHandle(4),
+            }
+        );
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"error","context":"dispatch","message":"bad command"}"#)
+                .unwrap(),
+            MapLibreEvent::Error {
+                context: "dispatch".to_owned(),
+                message: "bad command".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn ipc_event_parser_accepts_subscription_event_envelopes() {
+        let map_event = parse_ipc_event(
+            r#"{"type":"map","handle":1,"event":{"kind":"move_end","view":{"center_lng":-123.1,"center_lat":49.2,"zoom":11.0,"bearing":0.0,"pitch":0.0}}}"#,
+        )
+        .unwrap();
+        assert!(matches!(map_event, MapLibreEvent::Map { .. }));
+
+        let layer_event = parse_ipc_event(
+            r#"{"type":"layer","handle":1,"event":{"kind":"click","layer_id":"places","lng":-123.1,"lat":49.2,"screen_x":100.0,"screen_y":200.0,"features":[]}}"#,
+        )
+        .unwrap();
+        assert!(matches!(layer_event, MapLibreEvent::Layer { .. }));
+
+        let marker_drag = parse_ipc_event(
+            r#"{"type":"marker_drag","marker_handle":2,"event":{"kind":"drag_end","lng":-123.1,"lat":49.2}}"#,
+        )
+        .unwrap();
+        assert!(matches!(marker_drag, MapLibreEvent::MarkerDrag { .. }));
+
+        let popup = parse_ipc_event(
+            r#"{"type":"popup","popup_handle":4,"event":{"kind":"open","lng":-123.1,"lat":49.2}}"#,
+        )
+        .unwrap();
+        assert!(matches!(popup, MapLibreEvent::Popup { .. }));
+    }
+
+    #[test]
+    fn ipc_event_parser_returns_typed_error_for_invalid_json() {
+        let error = parse_ipc_event("{broken").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .starts_with("failed to parse MapLibre event:")
+        );
+        assert!(std::error::Error::source(&error).is_some());
     }
 }
