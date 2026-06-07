@@ -1,6 +1,6 @@
-use crate::MapCommand;
-use crate::event::MapLibreEvent;
+use crate::event::{MapLibreEvent, parse_ipc_event};
 use crate::ids::{ControlHandle, MapHandle, MarkerHandle, PopupHandle};
+use crate::{MapCommand, Result};
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 
@@ -193,6 +193,11 @@ pub struct EventRouter {
     marker_handles_by_request: HashMap<u64, MarkerHandle>,
     popup_handles_by_request: HashMap<u64, PopupHandle>,
     errors: Vec<RoutedError>,
+}
+
+pub fn route_ipc_message(router: &mut EventRouter, message: &str) -> Result<EventRouterAction> {
+    let event = parse_ipc_event(message)?;
+    Ok(router.route_event(event))
 }
 
 impl EventRouter {
@@ -702,5 +707,31 @@ mod tests {
         assert_eq!(router.control_handle_for_request(1), Some(ControlHandle(7)));
         assert_eq!(router.marker_handle_for_request(1), Some(MarkerHandle(2)));
         assert_eq!(router.popup_handle_for_request(1), Some(PopupHandle(4)));
+    }
+
+    #[test]
+    fn runtime_routes_ipc_messages_through_event_router() {
+        let mut router = EventRouter::new();
+
+        let action = route_ipc_message(&mut router, r#"{"type":"dom_ready"}"#).unwrap();
+        assert_eq!(action, EventRouterAction::DomReady);
+        assert!(router.is_dom_ready());
+
+        let action =
+            route_ipc_message(&mut router, r#"{"type":"initialized","handle":1}"#).unwrap();
+        assert_eq!(
+            action,
+            EventRouterAction::Initialized {
+                handle: MapHandle(1),
+            }
+        );
+        assert_eq!(router.map_handle(), Some(MapHandle(1)));
+
+        let error = route_ipc_message(&mut router, "{broken").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("failed to parse MapLibre event:")
+        );
     }
 }
