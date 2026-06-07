@@ -1,7 +1,10 @@
 use crate::asset::private_index_html;
-use crate::runtime::{EventRouter, EventRouterAction, ViewLifecycle, route_ipc_message};
+use crate::runtime::{
+    EventRouter, EventRouterAction, EventSubscriptionRegistry, ViewLifecycle, route_ipc_message,
+};
+use crate::subscription::{EventSubscription, EventSubscriptionTarget};
 use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapInitOptions};
-use crate::{MapCommand, MapLibreError, Result};
+use crate::{MapCommand, MapLibreError, MapLibreEvent, Result};
 use gpui::{Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div};
 use std::marker::PhantomData;
 
@@ -98,6 +101,7 @@ pub struct MapLibreView<T = FakeTransport> {
     controller: MapController<T>,
     router: EventRouter,
     lifecycle: ViewLifecycle,
+    subscriptions: EventSubscriptionRegistry,
     webview: Option<Entity<gpui_wry::WebView>>,
     last_ipc_error: Option<String>,
 }
@@ -119,6 +123,7 @@ impl<T> MapLibreView<T> {
             controller,
             router: EventRouter::new(),
             lifecycle: ViewLifecycle::new(),
+            subscriptions: EventSubscriptionRegistry::new(),
             webview: None,
             last_ipc_error: None,
         }
@@ -150,6 +155,32 @@ impl<T> MapLibreView<T> {
 
     pub fn lifecycle_mut(&mut self) -> &mut ViewLifecycle {
         &mut self.lifecycle
+    }
+
+    pub fn subscription_registry(&self) -> &EventSubscriptionRegistry {
+        &self.subscriptions
+    }
+
+    pub fn subscription_registry_mut(&mut self) -> &mut EventSubscriptionRegistry {
+        &mut self.subscriptions
+    }
+
+    pub fn track_subscription(
+        &mut self,
+        subscription: EventSubscription,
+    ) -> Option<EventSubscription> {
+        self.subscriptions.insert(subscription)
+    }
+
+    pub fn untrack_subscription(
+        &mut self,
+        target: &EventSubscriptionTarget,
+    ) -> Option<EventSubscription> {
+        self.subscriptions.remove(target)
+    }
+
+    pub fn is_event_subscribed(&self, event: &MapLibreEvent) -> bool {
+        self.subscriptions.contains_event(event)
     }
 
     pub fn webview(&self) -> Option<&Entity<gpui_wry::WebView>> {
@@ -227,6 +258,18 @@ impl<T: CommandTransport> MapLibreView<T> {
 
         Ok(did_cleanup)
     }
+
+    pub fn subscribe_events(&mut self, subscription: EventSubscription) -> Result<()> {
+        self.controller.subscribe_events(subscription.clone())?;
+        self.subscriptions.insert(subscription);
+        Ok(())
+    }
+
+    pub fn unsubscribe_events(&mut self, target: EventSubscriptionTarget) -> Result<()> {
+        self.controller.unsubscribe_events(target.clone())?;
+        self.subscriptions.remove(&target);
+        Ok(())
+    }
 }
 
 impl<T: CommandTransport + 'static> Render for MapLibreView<T> {
@@ -244,7 +287,10 @@ impl<T: CommandTransport + 'static> Render for MapLibreView<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MapHandle;
+    use crate::{
+        LayerEventSubscription, MapEventSubscription, MapHandle, MarkerDragEventSubscription,
+        MarkerHandle,
+    };
 
     #[test]
     fn map_view_config_keeps_assets_private() {
@@ -340,6 +386,62 @@ mod tests {
                 },
                 MapCommand::Destroy {
                     handle: MapHandle(7),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn subscriptions_map_view_tracks_generic_event_api_after_dispatch() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+        view.handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+
+        view.subscribe_events(EventSubscription::map(MapEventSubscription::default()))
+            .unwrap();
+        view.subscribe_events(EventSubscription::layer(LayerEventSubscription::clicks(
+            "places",
+        )))
+        .unwrap();
+        view.subscribe_events(EventSubscription::marker_drag(
+            MarkerHandle(10),
+            MarkerDragEventSubscription::default(),
+        ))
+        .unwrap();
+        view.unsubscribe_events(EventSubscriptionTarget::layer("places"))
+            .unwrap();
+
+        assert!(
+            view.subscription_registry()
+                .contains(&EventSubscriptionTarget::Map)
+        );
+        assert!(
+            !view
+                .subscription_registry()
+                .contains(&EventSubscriptionTarget::layer("places"))
+        );
+        assert!(
+            view.subscription_registry()
+                .contains(&EventSubscriptionTarget::marker_drag(MarkerHandle(10)))
+        );
+        assert_eq!(
+            view.controller().transport().commands(),
+            &[
+                MapCommand::SubscribeMapEvents {
+                    handle: MapHandle(7),
+                    subscription: MapEventSubscription::default(),
+                },
+                MapCommand::SubscribeLayerEvents {
+                    handle: MapHandle(7),
+                    subscription: LayerEventSubscription::clicks("places"),
+                },
+                MapCommand::SubscribeMarkerDragEvents {
+                    marker_handle: MarkerHandle(10),
+                    subscription: MarkerDragEventSubscription::default(),
+                },
+                MapCommand::UnsubscribeLayerEvents {
+                    handle: MapHandle(7),
+                    layer_id: "places".to_owned(),
                 },
             ]
         );

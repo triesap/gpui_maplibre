@@ -4,8 +4,8 @@ use crate::marker::MarkerOptions;
 use crate::options::MapInitOptions;
 use crate::popup::PopupOptions;
 use crate::subscription::{
-    LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
-    PopupEventSubscription,
+    EventSubscription, EventSubscriptionTarget, LayerEventSubscription, MapEventSubscription,
+    MarkerDragEventSubscription, PopupEventSubscription,
 };
 use crate::transport::CommandTransport;
 use crate::types::{Bounds, LngLat, MapControlAnchor};
@@ -507,6 +507,34 @@ impl<T: CommandTransport> MapController<T> {
 
     pub fn unsubscribe_popup_events(&mut self, popup_handle: PopupHandle) -> Result<()> {
         self.send(MapCommand::UnsubscribePopupEvents { popup_handle })
+    }
+
+    pub fn subscribe_events(&mut self, subscription: EventSubscription) -> Result<()> {
+        match subscription {
+            EventSubscription::Map { subscription } => self.subscribe_map_events(subscription),
+            EventSubscription::Layer { subscription } => self.subscribe_layer_events(subscription),
+            EventSubscription::MarkerDrag {
+                marker_handle,
+                subscription,
+            } => self.subscribe_marker_drag_events(marker_handle, subscription),
+            EventSubscription::Popup {
+                popup_handle,
+                subscription,
+            } => self.subscribe_popup_events(popup_handle, subscription),
+        }
+    }
+
+    pub fn unsubscribe_events(&mut self, target: EventSubscriptionTarget) -> Result<()> {
+        match target {
+            EventSubscriptionTarget::Map => self.unsubscribe_map_events(),
+            EventSubscriptionTarget::Layer { layer_id } => self.unsubscribe_layer_events(layer_id),
+            EventSubscriptionTarget::MarkerDrag { marker_handle } => {
+                self.unsubscribe_marker_drag_events(marker_handle)
+            }
+            EventSubscriptionTarget::Popup { popup_handle } => {
+                self.unsubscribe_popup_events(popup_handle)
+            }
+        }
     }
 
     fn send(&mut self, command: MapCommand) -> Result<()> {
@@ -1186,6 +1214,67 @@ mod tests {
                 },
                 MapCommand::UnsubscribePopupEvents {
                     popup_handle: PopupHandle(11),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn subscriptions_controller_accepts_generic_event_api() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        controller
+            .subscribe_events(EventSubscription::map(MapEventSubscription::default()))
+            .unwrap();
+        controller
+            .subscribe_events(EventSubscription::layer(LayerEventSubscription::clicks(
+                "places",
+            )))
+            .unwrap();
+        controller
+            .subscribe_events(EventSubscription::marker_drag(
+                MarkerHandle(10),
+                MarkerDragEventSubscription::default(),
+            ))
+            .unwrap();
+        controller
+            .subscribe_events(EventSubscription::popup(
+                PopupHandle(11),
+                PopupEventSubscription::default(),
+            ))
+            .unwrap();
+        controller
+            .unsubscribe_events(EventSubscriptionTarget::layer("places"))
+            .unwrap();
+        controller
+            .unsubscribe_events(EventSubscriptionTarget::marker_drag(MarkerHandle(10)))
+            .unwrap();
+
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::SubscribeMapEvents {
+                    handle: MapHandle(1),
+                    subscription: MapEventSubscription::default(),
+                },
+                MapCommand::SubscribeLayerEvents {
+                    handle: MapHandle(1),
+                    subscription: LayerEventSubscription::clicks("places"),
+                },
+                MapCommand::SubscribeMarkerDragEvents {
+                    marker_handle: MarkerHandle(10),
+                    subscription: MarkerDragEventSubscription::default(),
+                },
+                MapCommand::SubscribePopupEvents {
+                    popup_handle: PopupHandle(11),
+                    subscription: PopupEventSubscription::default(),
+                },
+                MapCommand::UnsubscribeLayerEvents {
+                    handle: MapHandle(1),
+                    layer_id: "places".to_owned(),
+                },
+                MapCommand::UnsubscribeMarkerDragEvents {
+                    marker_handle: MarkerHandle(10),
                 },
             ]
         );

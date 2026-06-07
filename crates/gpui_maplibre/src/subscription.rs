@@ -1,4 +1,5 @@
 use crate::event::{LayerEventKind, MapEventKind, MarkerDragEventKind, PopupLifecycleEventKind};
+use crate::ids::{LayerId, MarkerHandle, PopupHandle};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -114,9 +115,100 @@ impl Default for PopupEventSubscription {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum EventSubscription {
+    Map {
+        subscription: MapEventSubscription,
+    },
+    Layer {
+        subscription: LayerEventSubscription,
+    },
+    MarkerDrag {
+        marker_handle: MarkerHandle,
+        subscription: MarkerDragEventSubscription,
+    },
+    Popup {
+        popup_handle: PopupHandle,
+        subscription: PopupEventSubscription,
+    },
+}
+
+impl EventSubscription {
+    pub fn map(subscription: MapEventSubscription) -> Self {
+        Self::Map { subscription }
+    }
+
+    pub fn layer(subscription: LayerEventSubscription) -> Self {
+        Self::Layer { subscription }
+    }
+
+    pub fn marker_drag(
+        marker_handle: MarkerHandle,
+        subscription: MarkerDragEventSubscription,
+    ) -> Self {
+        Self::MarkerDrag {
+            marker_handle,
+            subscription,
+        }
+    }
+
+    pub fn popup(popup_handle: PopupHandle, subscription: PopupEventSubscription) -> Self {
+        Self::Popup {
+            popup_handle,
+            subscription,
+        }
+    }
+
+    pub fn target(&self) -> EventSubscriptionTarget {
+        match self {
+            Self::Map { .. } => EventSubscriptionTarget::Map,
+            Self::Layer { subscription } => EventSubscriptionTarget::Layer {
+                layer_id: subscription.layer_id.clone(),
+            },
+            Self::MarkerDrag { marker_handle, .. } => EventSubscriptionTarget::MarkerDrag {
+                marker_handle: *marker_handle,
+            },
+            Self::Popup { popup_handle, .. } => EventSubscriptionTarget::Popup {
+                popup_handle: *popup_handle,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "scope", rename_all = "snake_case")]
+pub enum EventSubscriptionTarget {
+    Map,
+    Layer { layer_id: String },
+    MarkerDrag { marker_handle: MarkerHandle },
+    Popup { popup_handle: PopupHandle },
+}
+
+impl EventSubscriptionTarget {
+    pub fn map() -> Self {
+        Self::Map
+    }
+
+    pub fn layer(layer_id: impl Into<LayerId>) -> Self {
+        Self::Layer {
+            layer_id: layer_id.into().to_string(),
+        }
+    }
+
+    pub fn marker_drag(marker_handle: MarkerHandle) -> Self {
+        Self::MarkerDrag { marker_handle }
+    }
+
+    pub fn popup(popup_handle: PopupHandle) -> Self {
+        Self::Popup { popup_handle }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn subscriptions_build_defaults_and_custom_kinds() {
@@ -163,6 +255,63 @@ mod tests {
                     PopupLifecycleEventKind::Close
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn subscriptions_build_generic_targets() {
+        let map = EventSubscription::map(MapEventSubscription::default().with_throttle_ms(250));
+        let layer = EventSubscription::layer(LayerEventSubscription::clicks("places"));
+        let marker = EventSubscription::marker_drag(
+            MarkerHandle(10),
+            MarkerDragEventSubscription::default().with_throttle_ms(16),
+        );
+        let popup = EventSubscription::popup(PopupHandle(11), PopupEventSubscription::default());
+
+        assert_eq!(map.target(), EventSubscriptionTarget::Map);
+        assert_eq!(
+            layer.target(),
+            EventSubscriptionTarget::Layer {
+                layer_id: "places".to_owned(),
+            }
+        );
+        assert_eq!(
+            marker.target(),
+            EventSubscriptionTarget::MarkerDrag {
+                marker_handle: MarkerHandle(10),
+            }
+        );
+        assert_eq!(
+            popup.target(),
+            EventSubscriptionTarget::Popup {
+                popup_handle: PopupHandle(11),
+            }
+        );
+    }
+
+    #[test]
+    fn subscriptions_serialize_generic_envelope() {
+        assert_eq!(
+            serde_json::to_value(EventSubscriptionTarget::layer("places")).unwrap(),
+            json!({
+                "scope": "layer",
+                "layer_id": "places"
+            })
+        );
+
+        assert_eq!(
+            serde_json::to_value(EventSubscription::popup(
+                PopupHandle(11),
+                PopupEventSubscription::default()
+            ))
+            .unwrap(),
+            json!({
+                "scope": "popup",
+                "popup_handle": 11,
+                "subscription": {
+                    "kinds": ["open", "close"]
+                }
+            })
         );
     }
 }

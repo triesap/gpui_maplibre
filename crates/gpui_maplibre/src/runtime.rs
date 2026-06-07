@@ -1,5 +1,6 @@
 use crate::event::{MapLibreEvent, parse_ipc_event};
 use crate::ids::{ControlHandle, MapHandle, MarkerHandle, PopupHandle};
+use crate::subscription::{EventSubscription, EventSubscriptionTarget};
 use crate::{MapCommand, Result};
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
@@ -256,6 +257,81 @@ impl ViewLifecycle {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EventSubscriptionRegistry {
+    subscriptions: HashMap<EventSubscriptionTarget, EventSubscription>,
+}
+
+impl EventSubscriptionRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.subscriptions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.subscriptions.is_empty()
+    }
+
+    pub fn insert(&mut self, subscription: EventSubscription) -> Option<EventSubscription> {
+        self.subscriptions
+            .insert(subscription.target(), subscription)
+    }
+
+    pub fn remove(&mut self, target: &EventSubscriptionTarget) -> Option<EventSubscription> {
+        self.subscriptions.remove(target)
+    }
+
+    pub fn contains(&self, target: &EventSubscriptionTarget) -> bool {
+        self.subscriptions.contains_key(target)
+    }
+
+    pub fn get(&self, target: &EventSubscriptionTarget) -> Option<&EventSubscription> {
+        self.subscriptions.get(target)
+    }
+
+    pub fn targets(&self) -> impl Iterator<Item = &EventSubscriptionTarget> {
+        self.subscriptions.keys()
+    }
+
+    pub fn subscriptions(&self) -> impl Iterator<Item = &EventSubscription> {
+        self.subscriptions.values()
+    }
+
+    pub fn target_for_event(event: &MapLibreEvent) -> Option<EventSubscriptionTarget> {
+        match event {
+            MapLibreEvent::Map { .. } => Some(EventSubscriptionTarget::Map),
+            MapLibreEvent::Layer { event, .. } => Some(EventSubscriptionTarget::Layer {
+                layer_id: event.layer_id.clone(),
+            }),
+            MapLibreEvent::MarkerDrag { marker_handle, .. } => {
+                Some(EventSubscriptionTarget::MarkerDrag {
+                    marker_handle: *marker_handle,
+                })
+            }
+            MapLibreEvent::Popup { popup_handle, .. } => Some(EventSubscriptionTarget::Popup {
+                popup_handle: *popup_handle,
+            }),
+            MapLibreEvent::DomReady
+            | MapLibreEvent::Initialized { .. }
+            | MapLibreEvent::Ready { .. }
+            | MapLibreEvent::Click { .. }
+            | MapLibreEvent::NativeControlCreated { .. }
+            | MapLibreEvent::MarkerCreated { .. }
+            | MapLibreEvent::PopupCreated { .. }
+            | MapLibreEvent::Error { .. } => None,
+        }
+    }
+
+    pub fn contains_event(&self, event: &MapLibreEvent) -> bool {
+        Self::target_for_event(event)
+            .as_ref()
+            .is_some_and(|target| self.contains(target))
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EventRouter {
     dom_ready: bool,
@@ -411,8 +487,12 @@ impl EventRouter {
 mod tests {
     use super::*;
     use crate::event::{
-        FeatureHit, MarkerDragEvent, MarkerDragEventKind, PopupLifecycleEvent,
-        PopupLifecycleEventKind,
+        FeatureHit, LayerEvent, LayerEventKind, MapEvent, MapEventKind, MarkerDragEvent,
+        MarkerDragEventKind, PopupLifecycleEvent, PopupLifecycleEventKind,
+    };
+    use crate::{
+        LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
+        PopupEventSubscription,
     };
     use serde_json::json;
 
@@ -606,6 +686,65 @@ mod tests {
             router.route_event(popup.clone()),
             EventRouterAction::Emit(popup)
         );
+    }
+
+    #[test]
+    fn event_router_tracks_generic_subscription_registry() {
+        let mut registry = EventSubscriptionRegistry::new();
+
+        registry.insert(EventSubscription::map(MapEventSubscription::default()));
+        registry.insert(EventSubscription::layer(LayerEventSubscription::clicks(
+            "places",
+        )));
+        registry.insert(EventSubscription::marker_drag(
+            MarkerHandle(3),
+            MarkerDragEventSubscription::default(),
+        ));
+        registry.insert(EventSubscription::popup(
+            PopupHandle(4),
+            PopupEventSubscription::default(),
+        ));
+
+        assert_eq!(registry.len(), 4);
+        assert!(registry.contains(&EventSubscriptionTarget::Map));
+        assert!(registry.contains(&EventSubscriptionTarget::layer("places")));
+
+        let map_event = MapLibreEvent::Map {
+            handle: MapHandle(1),
+            event: MapEvent {
+                kind: MapEventKind::MoveEnd,
+                view: crate::MapViewState {
+                    center_lng: 11.0,
+                    center_lat: 58.0,
+                    zoom: 10.0,
+                    bearing: 0.0,
+                    pitch: 0.0,
+                },
+                message: None,
+            },
+        };
+        let layer_event = MapLibreEvent::Layer {
+            handle: MapHandle(1),
+            event: LayerEvent {
+                kind: LayerEventKind::Click,
+                layer_id: "places".to_owned(),
+                lng: 11.0,
+                lat: 58.0,
+                screen_x: 10.0,
+                screen_y: 20.0,
+                features: Vec::new(),
+            },
+        };
+
+        assert!(registry.contains_event(&map_event));
+        assert!(registry.contains_event(&layer_event));
+        assert_eq!(
+            EventSubscriptionRegistry::target_for_event(&layer_event),
+            Some(EventSubscriptionTarget::layer("places"))
+        );
+
+        registry.remove(&EventSubscriptionTarget::layer("places"));
+        assert!(!registry.contains_event(&layer_event));
     }
 
     #[test]

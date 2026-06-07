@@ -41,13 +41,13 @@ pub use options::{MapInitOptions, NativeControlOptions};
 pub use popup::PopupOptions;
 pub use popup_content::PopupContent;
 pub use runtime::{
-    EventRouter, EventRouterAction, RoutedError, RuntimeCommandAction, RuntimeCommandQueue,
-    ViewLifecycle, route_ipc_message,
+    EventRouter, EventRouterAction, EventSubscriptionRegistry, RoutedError, RuntimeCommandAction,
+    RuntimeCommandQueue, ViewLifecycle, route_ipc_message,
 };
 pub use source::{SourceType, geojson_source, raster_source, vector_source};
 pub use subscription::{
-    LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
-    PopupEventSubscription,
+    EventSubscription, EventSubscriptionTarget, LayerEventSubscription, MapEventSubscription,
+    MarkerDragEventSubscription, PopupEventSubscription,
 };
 #[cfg(feature = "gpui-webview")]
 pub use transport::GpuiWebViewTransport;
