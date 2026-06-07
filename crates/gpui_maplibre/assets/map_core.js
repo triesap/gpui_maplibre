@@ -1,7 +1,26 @@
 // Adapted from leptos_maplibre's JavaScript bindings.
 // This file is a private gpui_maplibre implementation detail.
 
-import maplibregl from "https://esm.sh/maplibre-gl@5.13.0";
+let maplibregl = globalThis.__gpui_maplibre_maplibregl ?? globalThis.maplibregl ?? null;
+export function configure_maplibre_gl(candidate) {
+    if (candidate === undefined || candidate === null) {
+        throw new Error("gpui_maplibre requires a MapLibre GL implementation");
+    }
+    maplibregl = candidate.default ?? candidate.maplibregl ?? candidate;
+    return maplibregl;
+}
+export async function load_maplibre_gl(module_url) {
+    return configure_maplibre_gl(await import(module_url));
+}
+export function has_maplibre_gl() {
+    return maplibregl !== undefined && maplibregl !== null;
+}
+function require_maplibre_gl() {
+    if (!has_maplibre_gl()) {
+        throw new Error("gpui_maplibre requires MapLibre GL to be loaded or configured");
+    }
+    return maplibregl;
+}
 let next_id = 1;
 let next_marker_id = 1;
 let next_popup_id = 1;
@@ -287,44 +306,46 @@ function apply_native_controls(map, controls) {
     if (is_nil(controls)) {
         return;
     }
+    const gl = require_maplibre_gl();
     const navigation_anchor = to_control_anchor(controls.navigation);
     if (navigation_anchor !== undefined) {
-        map.addControl(new maplibregl.NavigationControl(), navigation_anchor);
+        map.addControl(new gl.NavigationControl(), navigation_anchor);
     }
     const scale_anchor = to_control_anchor(controls.scale);
     if (scale_anchor !== undefined) {
-        map.addControl(new maplibregl.ScaleControl(), scale_anchor);
+        map.addControl(new gl.ScaleControl(), scale_anchor);
     }
     const fullscreen_anchor = to_control_anchor(controls.fullscreen);
     if (fullscreen_anchor !== undefined) {
-        map.addControl(new maplibregl.FullscreenControl(), fullscreen_anchor);
+        map.addControl(new gl.FullscreenControl(), fullscreen_anchor);
     }
     const geolocate_anchor = to_control_anchor(controls.geolocate);
     if (geolocate_anchor !== undefined) {
-        map.addControl(new maplibregl.GeolocateControl({}), geolocate_anchor);
+        map.addControl(new gl.GeolocateControl({}), geolocate_anchor);
     }
     const attribution_anchor = to_control_anchor(controls.attribution);
     if (attribution_anchor !== undefined) {
-        map.addControl(new maplibregl.AttributionControl(), attribution_anchor);
+        map.addControl(new gl.AttributionControl(), attribution_anchor);
     }
 }
 function create_native_control(control_kind, options) {
+    const gl = require_maplibre_gl();
     const normalized_options =
         typeof options === "object" && options !== null ? options : {};
     if (control_kind === "navigation") {
-        return new maplibregl.NavigationControl(normalized_options);
+        return new gl.NavigationControl(normalized_options);
     }
     if (control_kind === "scale") {
-        return new maplibregl.ScaleControl(normalized_options);
+        return new gl.ScaleControl(normalized_options);
     }
     if (control_kind === "fullscreen") {
-        return new maplibregl.FullscreenControl(normalized_options);
+        return new gl.FullscreenControl(normalized_options);
     }
     if (control_kind === "geolocate") {
-        return new maplibregl.GeolocateControl(normalized_options);
+        return new gl.GeolocateControl(normalized_options);
     }
     if (control_kind === "attribution") {
-        return new maplibregl.AttributionControl(normalized_options);
+        return new gl.AttributionControl(normalized_options);
     }
     return undefined;
 }
@@ -455,7 +476,8 @@ export function init_map(container, options) {
     }
     let map;
     try {
-        map = new maplibregl.Map(map_options);
+        const gl = require_maplibre_gl();
+        map = new gl.Map(map_options);
     }
     catch (error) {
         log_bridge_error("init_map_options", {
@@ -980,7 +1002,8 @@ export function create_marker(
         if (marker_rotation !== undefined) {
             marker_options.rotation = marker_rotation;
         }
-        const marker = new maplibregl.Marker(marker_options)
+        const gl = require_maplibre_gl();
+        const marker = new gl.Marker(marker_options)
             .setLngLat([lng, lat])
             .addTo(map);
         const marker_handle = next_marker_id;
@@ -1116,7 +1139,8 @@ export function create_popup(
         if (resolved_max_width !== undefined) {
             popup_options.maxWidth = `${resolved_max_width}px`;
         }
-        const popup = new maplibregl.Popup(popup_options)
+        const gl = require_maplibre_gl();
+        const popup = new gl.Popup(popup_options)
             .setLngLat([lng, lat])
             .setHTML(html)
             .addTo(map);

@@ -5,8 +5,11 @@ const DEFAULT_CDN_VERSION: &str = "5.13.0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssetMode {
+    /// Load MapLibre GL JS and CSS from CDN script/link tags in the private HTML.
     Cdn { version: String },
+    /// Reserve relative vendored URLs for future local packaging without network access.
     VendoredPlaceholder,
+    /// Load caller-provided MapLibre GL JS and CSS URLs in the private HTML.
     Custom { js_url: String, css_url: String },
 }
 
@@ -163,5 +166,21 @@ mod tests {
                 "missing map_core export {export_name}"
             );
         }
+    }
+
+    #[test]
+    fn map_core_asset_mode_contract_supports_configured_maplibre_loading() {
+        let js = map_core_js();
+        let cdn_html = private_index_html(&AssetMode::cdn("5.13.0"));
+        let vendored_html = private_index_html(&AssetMode::VendoredPlaceholder);
+
+        assert!(!js.contains("https://esm.sh/maplibre-gl"));
+        assert!(js.contains("export function configure_maplibre_gl"));
+        assert!(js.contains("export async function load_maplibre_gl"));
+        assert!(js.contains("globalThis.maplibregl"));
+        assert!(js.contains("await import(module_url)"));
+        assert!(cdn_html.contains("https://unpkg.com/maplibre-gl@5.13.0"));
+        assert!(vendored_html.contains("./vendor/maplibre-gl.js"));
+        assert!(vendored_html.contains("./vendor/maplibre-gl.css"));
     }
 }
