@@ -1,3 +1,4 @@
+use crate::ids::{ControlHandle, MapHandle, MarkerHandle, PopupHandle};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +111,57 @@ pub struct PopupLifecycleEvent {
     pub kind: PopupLifecycleEventKind,
     pub lng: f64,
     pub lat: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MapLibreEvent {
+    DomReady,
+    Initialized {
+        handle: MapHandle,
+    },
+    Ready {
+        handle: MapHandle,
+    },
+    Click {
+        lng: f64,
+        lat: f64,
+        screen_x: f64,
+        screen_y: f64,
+        features: Vec<FeatureHit>,
+    },
+    Map {
+        handle: MapHandle,
+        event: MapEvent,
+    },
+    Layer {
+        handle: MapHandle,
+        event: LayerEvent,
+    },
+    NativeControlCreated {
+        request_id: u64,
+        control_handle: ControlHandle,
+    },
+    MarkerCreated {
+        request_id: u64,
+        marker_handle: MarkerHandle,
+    },
+    MarkerDrag {
+        marker_handle: MarkerHandle,
+        event: MarkerDragEvent,
+    },
+    PopupCreated {
+        request_id: u64,
+        popup_handle: PopupHandle,
+    },
+    Popup {
+        popup_handle: PopupHandle,
+        event: PopupLifecycleEvent,
+    },
+    Error {
+        context: String,
+        message: String,
+    },
 }
 
 #[cfg(test)]
@@ -242,6 +294,210 @@ mod events_tests {
         assert_eq!(
             serde_json::to_string(&PopupLifecycleEventKind::Close).unwrap(),
             "\"close\""
+        );
+    }
+
+    #[test]
+    fn maplibre_event_deserializes_ipc_payloads() {
+        let event = serde_json::from_str::<MapLibreEvent>(r#"{"type":"dom_ready"}"#).unwrap();
+        assert_eq!(event, MapLibreEvent::DomReady);
+
+        let event =
+            serde_json::from_str::<MapLibreEvent>(r#"{"type":"initialized","handle":1}"#).unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Initialized {
+                handle: MapHandle(1),
+            }
+        );
+
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "click",
+            "lng": -123.1,
+            "lat": 49.2,
+            "screen_x": 100.0,
+            "screen_y": 200.0,
+            "features": [
+                {"layer_id": "places", "properties": {"name": "Harbor"}}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Click {
+                lng: -123.1,
+                lat: 49.2,
+                screen_x: 100.0,
+                screen_y: 200.0,
+                features: vec![FeatureHit {
+                    layer_id: "places".to_owned(),
+                    properties: json!({"name": "Harbor"}),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn maplibre_event_wraps_nested_payloads() {
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "map",
+            "handle": 1,
+            "event": {
+                "kind": "move_end",
+                "view": {
+                    "center_lng": -123.1,
+                    "center_lat": 49.2,
+                    "zoom": 10.0,
+                    "bearing": 0.0,
+                    "pitch": 0.0
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Map {
+                handle: MapHandle(1),
+                event: MapEvent {
+                    kind: MapEventKind::MoveEnd,
+                    view: MapViewState {
+                        center_lng: -123.1,
+                        center_lat: 49.2,
+                        zoom: 10.0,
+                        bearing: 0.0,
+                        pitch: 0.0,
+                    },
+                    message: None,
+                },
+            }
+        );
+
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "layer",
+            "handle": 1,
+            "event": {
+                "kind": "click",
+                "layer_id": "places-fill",
+                "lng": -123.1,
+                "lat": 49.2,
+                "screen_x": 100.0,
+                "screen_y": 200.0,
+                "features": []
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Layer {
+                handle: MapHandle(1),
+                event: LayerEvent {
+                    kind: LayerEventKind::Click,
+                    layer_id: "places-fill".to_owned(),
+                    lng: -123.1,
+                    lat: 49.2,
+                    screen_x: 100.0,
+                    screen_y: 200.0,
+                    features: Vec::new(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn maplibre_event_deserializes_handle_acknowledgements_and_errors() {
+        let event = serde_json::from_str::<MapLibreEvent>(
+            r#"{"type":"native_control_created","request_id":10,"control_handle":2}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::NativeControlCreated {
+                request_id: 10,
+                control_handle: ControlHandle(2),
+            }
+        );
+
+        let event = serde_json::from_str::<MapLibreEvent>(
+            r#"{"type":"marker_created","request_id":11,"marker_handle":3}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::MarkerCreated {
+                request_id: 11,
+                marker_handle: MarkerHandle(3),
+            }
+        );
+
+        let event = serde_json::from_str::<MapLibreEvent>(
+            r#"{"type":"popup_created","request_id":12,"popup_handle":4}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::PopupCreated {
+                request_id: 12,
+                popup_handle: PopupHandle(4),
+            }
+        );
+
+        let event = serde_json::from_str::<MapLibreEvent>(
+            r#"{"type":"error","context":"add_layer","message":"duplicate id"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Error {
+                context: "add_layer".to_owned(),
+                message: "duplicate id".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn maplibre_event_deserializes_marker_and_popup_events() {
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "marker_drag",
+            "marker_handle": 3,
+            "event": {
+                "kind": "drag_end",
+                "lng": -123.1,
+                "lat": 49.2
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::MarkerDrag {
+                marker_handle: MarkerHandle(3),
+                event: MarkerDragEvent {
+                    kind: MarkerDragEventKind::DragEnd,
+                    lng: -123.1,
+                    lat: 49.2,
+                },
+            }
+        );
+
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "popup",
+            "popup_handle": 4,
+            "event": {
+                "kind": "open",
+                "lng": -123.1,
+                "lat": 49.2
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::Popup {
+                popup_handle: PopupHandle(4),
+                event: PopupLifecycleEvent {
+                    kind: PopupLifecycleEventKind::Open,
+                    lng: -123.1,
+                    lat: 49.2,
+                },
+            }
         );
     }
 }

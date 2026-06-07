@@ -16,7 +16,7 @@ pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOpt
 pub use error::{MapLibreError, Result};
 pub use event::{
     FeatureHit, LayerEvent, LayerEventKind, LayerFeatureHit, MapClickEvent, MapEvent, MapEventKind,
-    MapViewState, MarkerDragEvent, MarkerDragEventKind, PopupLifecycleEvent,
+    MapLibreEvent, MapViewState, MarkerDragEvent, MarkerDragEventKind, PopupLifecycleEvent,
     PopupLifecycleEventKind,
 };
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
