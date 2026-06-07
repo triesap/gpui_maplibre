@@ -35,7 +35,7 @@ pub use event::{
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
 pub use layer::{LayerType, background_layer, sourced_layer};
 #[cfg(feature = "gpui-webview")]
-pub use map_view::{MapLibreViewConfig, MapLibreWebViewStub};
+pub use map_view::{MapLibreView, MapLibreViewConfig, MapLibreWebViewStub};
 pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
 pub use popup::PopupOptions;
