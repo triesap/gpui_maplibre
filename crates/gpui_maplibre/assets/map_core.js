@@ -1,6 +1,3 @@
-// Adapted from leptos_maplibre's JavaScript bindings.
-// This file is a private gpui_maplibre implementation detail.
-
 let maplibregl = globalThis.__gpui_maplibre_maplibregl ?? globalThis.maplibregl ?? null;
 export function configure_maplibre_gl(candidate) {
     if (candidate === undefined || candidate === null) {

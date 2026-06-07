@@ -154,7 +154,6 @@ mod tests {
     fn map_core_asset_exports_reference_bridge_functions() {
         let js = map_core_js();
 
-        assert!(js.contains("private gpui_maplibre implementation detail"));
         for export_name in [
             "init_map",
             "destroy_map",
