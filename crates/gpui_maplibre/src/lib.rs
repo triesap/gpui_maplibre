@@ -12,6 +12,8 @@ pub mod popup_content;
 pub mod subscription;
 pub mod types;
 
+mod script;
+
 pub use command::MapCommand;
 pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOptions};
 pub use error::{MapLibreError, Result};
