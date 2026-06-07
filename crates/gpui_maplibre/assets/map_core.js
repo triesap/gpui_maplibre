@@ -47,7 +47,7 @@ const map_event_handlers = new globalThis.Map();
 const layer_event_handlers = new globalThis.Map();
 const layer_key_delimiter = "\u0000";
 function log_bridge_error(context, error) {
-    console.error(`leptos_maplibre ${context}:`, error);
+    console.error(`gpui_maplibre ${context}:`, error);
 }
 function get_map(handle) {
     return maps.get(handle);
