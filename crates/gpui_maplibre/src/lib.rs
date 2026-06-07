@@ -1,13 +1,18 @@
 #![forbid(unsafe_code)]
 
 pub mod command;
+pub mod control;
 pub mod error;
 pub mod event;
 pub mod ids;
+pub mod marker;
 pub mod options;
+pub mod popup;
+pub mod subscription;
 pub mod types;
 
 pub use command::MapCommand;
+pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOptions};
 pub use error::{MapLibreError, Result};
 pub use event::{
     FeatureHit, LayerEvent, LayerEventKind, LayerFeatureHit, MapClickEvent, MapEvent, MapEventKind,
@@ -15,7 +20,13 @@ pub use event::{
     PopupLifecycleEventKind,
 };
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
+pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
+pub use popup::{PopupContent, PopupOptions};
+pub use subscription::{
+    LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
+    PopupEventSubscription,
+};
 pub use types::{Bounds, LngLat, MapControlAnchor};
 
 #[cfg(test)]
