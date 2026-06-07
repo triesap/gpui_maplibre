@@ -1,11 +1,5 @@
+use crate::popup_content::PopupContent;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum PopupContent {
-    Text(String),
-    TrustedHtml(String),
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PopupOptions {

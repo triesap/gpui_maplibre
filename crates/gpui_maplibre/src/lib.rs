@@ -8,6 +8,7 @@ pub mod ids;
 pub mod marker;
 pub mod options;
 pub mod popup;
+pub mod popup_content;
 pub mod subscription;
 pub mod types;
 
@@ -22,7 +23,8 @@ pub use event::{
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
 pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
-pub use popup::{PopupContent, PopupOptions};
+pub use popup::PopupOptions;
+pub use popup_content::PopupContent;
 pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
     PopupEventSubscription,
