@@ -2,6 +2,7 @@
 
 pub mod command;
 pub mod control;
+pub mod controller;
 pub mod error;
 pub mod event;
 pub mod ids;
@@ -17,6 +18,7 @@ mod script;
 
 pub use command::MapCommand;
 pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOptions};
+pub use controller::MapController;
 pub use error::{MapLibreError, Result};
 pub use event::{
     FeatureHit, LayerEvent, LayerEventKind, LayerFeatureHit, MapClickEvent, MapEvent, MapEventKind,
