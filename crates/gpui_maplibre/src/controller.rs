@@ -301,6 +301,42 @@ impl<T: CommandTransport> MapController<T> {
         })
     }
 
+    pub fn set_feature_state(
+        &mut self,
+        source_id: impl Into<SourceId>,
+        source_layer: Option<String>,
+        feature_id: serde_json::Value,
+        state: serde_json::Value,
+    ) -> Result<()> {
+        let handle = self.require_handle("set_feature_state requires an initialized map handle")?;
+
+        self.send(MapCommand::SetFeatureState {
+            handle,
+            source_id: source_id.into().to_string(),
+            source_layer,
+            feature_id,
+            state,
+        })
+    }
+
+    pub fn set_terrain(&mut self, terrain: Option<serde_json::Value>) -> Result<()> {
+        let handle = self.require_handle("set_terrain requires an initialized map handle")?;
+
+        self.send(MapCommand::SetTerrain { handle, terrain })
+    }
+
+    pub fn set_fog(&mut self, fog: Option<serde_json::Value>) -> Result<()> {
+        let handle = self.require_handle("set_fog requires an initialized map handle")?;
+
+        self.send(MapCommand::SetFog { handle, fog })
+    }
+
+    pub fn set_light(&mut self, light: Option<serde_json::Value>) -> Result<()> {
+        let handle = self.require_handle("set_light requires an initialized map handle")?;
+
+        self.send(MapCommand::SetLight { handle, light })
+    }
+
     fn send(&mut self, command: MapCommand) -> Result<()> {
         self.transport.send_command(command)
     }
@@ -614,6 +650,93 @@ mod tests {
                 MapCommand::RemoveLayer {
                     handle: MapHandle(1),
                     layer_id: "places-circle".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn controller_feature_state_sends_feature_state_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        controller
+            .set_feature_state(
+                "places",
+                Some("settlements".to_owned()),
+                json!("se-1"),
+                json!({
+                    "selected": true,
+                    "hovered": false
+                }),
+            )
+            .unwrap();
+
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![MapCommand::SetFeatureState {
+                handle: MapHandle(1),
+                source_id: "places".to_owned(),
+                source_layer: Some("settlements".to_owned()),
+                feature_id: json!("se-1"),
+                state: json!({
+                    "selected": true,
+                    "hovered": false
+                }),
+            }]
+        );
+    }
+
+    #[test]
+    fn controller_scene_options_sends_terrain_fog_and_light_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        controller
+            .set_terrain(Some(json!({
+                "source": "terrain",
+                "exaggeration": 1.2
+            })))
+            .unwrap();
+        controller
+            .set_fog(Some(json!({
+                "range": [0.5, 10.0],
+                "color": "#d7e7ff"
+            })))
+            .unwrap();
+        controller
+            .set_light(Some(json!({
+                "anchor": "viewport",
+                "intensity": 0.4
+            })))
+            .unwrap();
+        controller.set_fog(None).unwrap();
+
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::SetTerrain {
+                    handle: MapHandle(1),
+                    terrain: Some(json!({
+                        "source": "terrain",
+                        "exaggeration": 1.2
+                    })),
+                },
+                MapCommand::SetFog {
+                    handle: MapHandle(1),
+                    fog: Some(json!({
+                        "range": [0.5, 10.0],
+                        "color": "#d7e7ff"
+                    })),
+                },
+                MapCommand::SetLight {
+                    handle: MapHandle(1),
+                    light: Some(json!({
+                        "anchor": "viewport",
+                        "intensity": 0.4
+                    })),
+                },
+                MapCommand::SetFog {
+                    handle: MapHandle(1),
+                    fog: None,
                 },
             ]
         );
