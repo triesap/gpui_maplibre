@@ -1,4 +1,4 @@
-use crate::ids::MapHandle;
+use crate::ids::{LayerId, MapHandle, SourceId};
 use crate::options::MapInitOptions;
 use crate::transport::CommandTransport;
 use crate::types::{Bounds, LngLat};
@@ -156,6 +156,151 @@ impl<T: CommandTransport> MapController<T> {
         })
     }
 
+    pub fn add_source(
+        &mut self,
+        source_id: impl Into<SourceId>,
+        source_spec: serde_json::Value,
+    ) -> Result<()> {
+        let handle = self.require_handle("add_source requires an initialized map handle")?;
+
+        self.send(MapCommand::AddSource {
+            handle,
+            source_id: source_id.into().to_string(),
+            source_spec,
+        })
+    }
+
+    pub fn add_geojson_source(
+        &mut self,
+        source_id: impl Into<SourceId>,
+        geojson: serde_json::Value,
+        promote_id: Option<String>,
+    ) -> Result<()> {
+        let handle =
+            self.require_handle("add_geojson_source requires an initialized map handle")?;
+
+        self.send(MapCommand::AddGeoJsonSource {
+            handle,
+            source_id: source_id.into().to_string(),
+            geojson,
+            promote_id,
+        })
+    }
+
+    pub fn update_geojson_source(
+        &mut self,
+        source_id: impl Into<SourceId>,
+        geojson: serde_json::Value,
+    ) -> Result<()> {
+        let handle =
+            self.require_handle("update_geojson_source requires an initialized map handle")?;
+
+        self.send(MapCommand::UpdateGeoJsonSource {
+            handle,
+            source_id: source_id.into().to_string(),
+            geojson,
+        })
+    }
+
+    pub fn remove_source(&mut self, source_id: impl Into<SourceId>) -> Result<()> {
+        let handle = self.require_handle("remove_source requires an initialized map handle")?;
+
+        self.send(MapCommand::RemoveSource {
+            handle,
+            source_id: source_id.into().to_string(),
+        })
+    }
+
+    pub fn add_layer(
+        &mut self,
+        layer_id: impl Into<LayerId>,
+        layer_spec: serde_json::Value,
+        before_id: Option<String>,
+    ) -> Result<()> {
+        let handle = self.require_handle("add_layer requires an initialized map handle")?;
+
+        self.send(MapCommand::AddLayer {
+            handle,
+            layer_id: layer_id.into().to_string(),
+            layer_spec,
+            before_id,
+        })
+    }
+
+    pub fn remove_layer(&mut self, layer_id: impl Into<LayerId>) -> Result<()> {
+        let handle = self.require_handle("remove_layer requires an initialized map handle")?;
+
+        self.send(MapCommand::RemoveLayer {
+            handle,
+            layer_id: layer_id.into().to_string(),
+        })
+    }
+
+    pub fn set_layout_property(
+        &mut self,
+        layer_id: impl Into<LayerId>,
+        property_name: impl Into<String>,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let handle =
+            self.require_handle("set_layout_property requires an initialized map handle")?;
+
+        self.send(MapCommand::SetLayoutProperty {
+            handle,
+            layer_id: layer_id.into().to_string(),
+            property_name: property_name.into(),
+            value,
+        })
+    }
+
+    pub fn set_paint_property(
+        &mut self,
+        layer_id: impl Into<LayerId>,
+        property_name: impl Into<String>,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let handle =
+            self.require_handle("set_paint_property requires an initialized map handle")?;
+
+        self.send(MapCommand::SetPaintProperty {
+            handle,
+            layer_id: layer_id.into().to_string(),
+            property_name: property_name.into(),
+            value,
+        })
+    }
+
+    pub fn set_filter(
+        &mut self,
+        layer_id: impl Into<LayerId>,
+        filter: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let handle = self.require_handle("set_filter requires an initialized map handle")?;
+
+        self.send(MapCommand::SetFilter {
+            handle,
+            layer_id: layer_id.into().to_string(),
+            filter,
+        })
+    }
+
+    pub fn set_layer_zoom_range(
+        &mut self,
+        layer_id: impl Into<LayerId>,
+        min_zoom: Option<f64>,
+        max_zoom: Option<f64>,
+    ) -> Result<()> {
+        let handle =
+            self.require_handle("set_layer_zoom_range requires an initialized map handle")?;
+
+        self.send(MapCommand::SetLayerZoomRange {
+            handle,
+            layer_id: layer_id.into().to_string(),
+            min_zoom,
+            max_zoom,
+        })
+    }
+
     fn send(&mut self, command: MapCommand) -> Result<()> {
         self.transport.send_command(command)
     }
@@ -169,7 +314,8 @@ impl<T: CommandTransport> MapController<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::FakeTransport;
+    use crate::{FakeTransport, LayerType, SourceType};
+    use serde_json::json;
 
     #[test]
     fn controller_lifecycle_sends_init_resize_set_style_and_destroy() {
@@ -318,6 +464,156 @@ mod tests {
                     padding: Some(24.0),
                     duration_ms: None,
                     max_zoom: Some(14.0),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn controller_sources_sends_source_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        controller
+            .add_source(
+                "tiles",
+                json!({
+                    "type": SourceType::Vector.as_str(),
+                    "url": "mapbox://tiles"
+                }),
+            )
+            .unwrap();
+        controller
+            .add_geojson_source(
+                "places",
+                json!({
+                    "type": "FeatureCollection",
+                    "features": []
+                }),
+                Some("id".to_owned()),
+            )
+            .unwrap();
+        controller
+            .update_geojson_source(
+                "places",
+                json!({
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "id": "se-1"
+                    }]
+                }),
+            )
+            .unwrap();
+        controller.remove_source("tiles").unwrap();
+
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::AddSource {
+                    handle: MapHandle(1),
+                    source_id: "tiles".to_owned(),
+                    source_spec: json!({
+                        "type": "vector",
+                        "url": "mapbox://tiles"
+                    }),
+                },
+                MapCommand::AddGeoJsonSource {
+                    handle: MapHandle(1),
+                    source_id: "places".to_owned(),
+                    geojson: json!({
+                        "type": "FeatureCollection",
+                        "features": []
+                    }),
+                    promote_id: Some("id".to_owned()),
+                },
+                MapCommand::UpdateGeoJsonSource {
+                    handle: MapHandle(1),
+                    source_id: "places".to_owned(),
+                    geojson: json!({
+                        "type": "FeatureCollection",
+                        "features": [{
+                            "type": "Feature",
+                            "id": "se-1"
+                        }]
+                    }),
+                },
+                MapCommand::RemoveSource {
+                    handle: MapHandle(1),
+                    source_id: "tiles".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn controller_layers_sends_layer_commands() {
+        let mut controller = MapController::with_handle(FakeTransport::new(), MapHandle(1));
+
+        controller
+            .add_layer(
+                "places-circle",
+                json!({
+                    "type": LayerType::Circle.as_str(),
+                    "source": "places"
+                }),
+                Some("labels".to_owned()),
+            )
+            .unwrap();
+        controller
+            .set_layout_property("places-circle", "visibility", json!("none"))
+            .unwrap();
+        controller
+            .set_paint_property("places-circle", "circle-color", json!("#2b6cb0"))
+            .unwrap();
+        controller
+            .set_filter(
+                "places-circle",
+                Some(json!(["==", ["get", "kind"], "harbor"])),
+            )
+            .unwrap();
+        controller
+            .set_layer_zoom_range("places-circle", Some(4.0), Some(12.0))
+            .unwrap();
+        controller.remove_layer("places-circle").unwrap();
+
+        assert_eq!(
+            controller.into_transport().into_commands(),
+            vec![
+                MapCommand::AddLayer {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
+                    layer_spec: json!({
+                        "type": "circle",
+                        "source": "places"
+                    }),
+                    before_id: Some("labels".to_owned()),
+                },
+                MapCommand::SetLayoutProperty {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
+                    property_name: "visibility".to_owned(),
+                    value: json!("none"),
+                },
+                MapCommand::SetPaintProperty {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
+                    property_name: "circle-color".to_owned(),
+                    value: json!("#2b6cb0"),
+                },
+                MapCommand::SetFilter {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
+                    filter: Some(json!(["==", ["get", "kind"], "harbor"])),
+                },
+                MapCommand::SetLayerZoomRange {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
+                    min_zoom: Some(4.0),
+                    max_zoom: Some(12.0),
+                },
+                MapCommand::RemoveLayer {
+                    handle: MapHandle(1),
+                    layer_id: "places-circle".to_owned(),
                 },
             ]
         );

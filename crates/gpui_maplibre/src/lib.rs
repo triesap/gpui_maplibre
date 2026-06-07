@@ -6,10 +6,12 @@ pub mod controller;
 pub mod error;
 pub mod event;
 pub mod ids;
+pub mod layer;
 pub mod marker;
 pub mod options;
 pub mod popup;
 pub mod popup_content;
+pub mod source;
 pub mod subscription;
 pub mod transport;
 pub mod types;
@@ -26,10 +28,12 @@ pub use event::{
     PopupLifecycleEventKind,
 };
 pub use ids::{ControlHandle, LayerId, MapHandle, MarkerHandle, PopupHandle, SourceId};
+pub use layer::{LayerType, background_layer, sourced_layer};
 pub use marker::MarkerOptions;
 pub use options::{MapInitOptions, NativeControlOptions};
 pub use popup::PopupOptions;
 pub use popup_content::PopupContent;
+pub use source::{SourceType, geojson_source, raster_source, vector_source};
 pub use subscription::{
     LayerEventSubscription, MapEventSubscription, MarkerDragEventSubscription,
     PopupEventSubscription,
