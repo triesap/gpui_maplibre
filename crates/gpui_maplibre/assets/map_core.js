@@ -1152,6 +1152,56 @@ export function create_popup(
         return 0;
     }
 }
+export function create_popup_text(
+    handle,
+    lng,
+    lat,
+    text,
+    close_button,
+    close_on_click,
+    anchor,
+    offset_x,
+    offset_y,
+    max_width,
+) {
+    const map = get_map(handle);
+    if (map === undefined) {
+        return 0;
+    }
+    try {
+        const popup_options = {
+            closeButton: close_button === true,
+            closeOnClick: close_on_click === true,
+        };
+        const popup_anchor = to_control_anchor(anchor);
+        if (popup_anchor !== undefined) {
+            popup_options.anchor = popup_anchor;
+        }
+        const resolved_offset_x = to_finite_number(offset_x);
+        const resolved_offset_y = to_finite_number(offset_y);
+        if (resolved_offset_x !== undefined && resolved_offset_y !== undefined) {
+            popup_options.offset = [resolved_offset_x, resolved_offset_y];
+        }
+        const resolved_max_width = to_finite_number(max_width);
+        if (resolved_max_width !== undefined) {
+            popup_options.maxWidth = `${resolved_max_width}px`;
+        }
+        const gl = require_maplibre_gl();
+        const popup = new gl.Popup(popup_options)
+            .setLngLat([lng, lat])
+            .setText(text)
+            .addTo(map);
+        const popup_handle = next_popup_id;
+        next_popup_id += 1;
+        popups.set(popup_handle, popup);
+        track_popup(handle, popup_handle);
+        return popup_handle;
+    }
+    catch (error) {
+        log_bridge_error("create_popup_text", error);
+        return 0;
+    }
+}
 export function update_popup(popup_handle, lng, lat, html, offset_x, offset_y, max_width) {
     const popup = popups.get(popup_handle);
     if (popup === undefined) {
@@ -1174,6 +1224,30 @@ export function update_popup(popup_handle, lng, lat, html, offset_x, offset_y, m
     }
     catch (error) {
         log_bridge_error("update_popup", error);
+    }
+}
+export function update_popup_text(popup_handle, lng, lat, text, offset_x, offset_y, max_width) {
+    const popup = popups.get(popup_handle);
+    if (popup === undefined) {
+        return;
+    }
+    try {
+        popup.setLngLat([lng, lat]);
+        popup.setText(text);
+        const resolved_offset_x = to_finite_number(offset_x);
+        const resolved_offset_y = to_finite_number(offset_y);
+        if (resolved_offset_x !== undefined &&
+            resolved_offset_y !== undefined &&
+            typeof popup.setOffset === "function") {
+            popup.setOffset([resolved_offset_x, resolved_offset_y]);
+        }
+        const resolved_max_width = to_finite_number(max_width);
+        if (resolved_max_width !== undefined && typeof popup.setMaxWidth === "function") {
+            popup.setMaxWidth(`${resolved_max_width}px`);
+        }
+    }
+    catch (error) {
+        log_bridge_error("update_popup_text", error);
     }
 }
 export function remove_popup(popup_handle) {

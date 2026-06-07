@@ -116,14 +116,126 @@ export function set_light(handle, light) {
     record("set_light", { handle, light });
 }
 
-export function create_marker(handle, options) {
-    record("create_marker", { handle, options });
+export function add_native_control(handle, control_kind, anchor, options) {
+    record("add_native_control", { handle, control_kind, anchor, options });
+    return 7;
+}
+
+export function remove_native_control(control_handle) {
+    record("remove_native_control", { control_handle });
+}
+
+export function create_marker(handle, lng, lat, draggable, anchor, offset_x, offset_y, rotation) {
+    record("create_marker", {
+        handle,
+        lng,
+        lat,
+        draggable,
+        anchor,
+        offset_x,
+        offset_y,
+        rotation,
+    });
     return 2;
 }
 
-export function create_popup(handle, options) {
-    record("create_popup", { handle, options });
+export function update_marker(marker_handle, lng, lat, draggable, anchor, offset_x, offset_y, rotation) {
+    record("update_marker", {
+        marker_handle,
+        lng,
+        lat,
+        draggable,
+        anchor,
+        offset_x,
+        offset_y,
+        rotation,
+    });
+}
+
+export function remove_marker(marker_handle) {
+    record("remove_marker", { marker_handle });
+}
+
+export function create_popup(
+    handle,
+    lng,
+    lat,
+    html,
+    close_button,
+    close_on_click,
+    anchor,
+    offset_x,
+    offset_y,
+    max_width,
+) {
+    record("create_popup", {
+        handle,
+        lng,
+        lat,
+        html,
+        close_button,
+        close_on_click,
+        anchor,
+        offset_x,
+        offset_y,
+        max_width,
+    });
     return 3;
+}
+
+export function create_popup_text(
+    handle,
+    lng,
+    lat,
+    text,
+    close_button,
+    close_on_click,
+    anchor,
+    offset_x,
+    offset_y,
+    max_width,
+) {
+    record("create_popup_text", {
+        handle,
+        lng,
+        lat,
+        text,
+        close_button,
+        close_on_click,
+        anchor,
+        offset_x,
+        offset_y,
+        max_width,
+    });
+    return 4;
+}
+
+export function update_popup(popup_handle, lng, lat, html, offset_x, offset_y, max_width) {
+    record("update_popup", {
+        popup_handle,
+        lng,
+        lat,
+        html,
+        offset_x,
+        offset_y,
+        max_width,
+    });
+}
+
+export function update_popup_text(popup_handle, lng, lat, text, offset_x, offset_y, max_width) {
+    record("update_popup_text", {
+        popup_handle,
+        lng,
+        lat,
+        text,
+        offset_x,
+        offset_y,
+        max_width,
+    });
+}
+
+export function remove_popup(popup_handle) {
+    record("remove_popup", { popup_handle });
 }
 
 export function register_on_map_events(handle, callback) {

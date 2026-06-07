@@ -455,6 +455,226 @@ test("dispatch feature-state and scene commands pass values through", () => {
     ]);
 });
 
+test("dispatch controls and marker commands post acknowledgements", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "add_native_control",
+                request_id: 10,
+                handle: 1,
+                kind: "navigation",
+                anchor: "top_right",
+                options: { showCompass: true },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch({ type: "remove_native_control", control_handle: 7 }, target),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "create_marker",
+                request_id: 11,
+                handle: 1,
+                options: {
+                    lng: -123.1,
+                    lat: 49.2,
+                    draggable: true,
+                    anchor: "bottom",
+                    offset_x: 4,
+                    offset_y: 8,
+                    rotation: 45,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "update_marker",
+                marker_handle: 2,
+                options: {
+                    lng: -123.2,
+                    lat: 49.3,
+                    draggable: false,
+                    anchor: null,
+                    offset_x: null,
+                    offset_y: null,
+                    rotation: null,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(dispatch({ type: "remove_marker", marker_handle: 2 }, target), {
+        ok: true,
+    });
+
+    assert.deepEqual(target.messages, [
+        {
+            type: "native_control_created",
+            request_id: 10,
+            control_handle: 7,
+        },
+        {
+            type: "marker_created",
+            request_id: 11,
+            marker_handle: 2,
+        },
+    ]);
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "add_native_control",
+            payload: {
+                handle: 1,
+                control_kind: "navigation",
+                anchor: "top_right",
+                options: { showCompass: true },
+            },
+        },
+        {
+            name: "remove_native_control",
+            payload: {
+                control_handle: 7,
+            },
+        },
+        {
+            name: "create_marker",
+            payload: {
+                handle: 1,
+                lng: -123.1,
+                lat: 49.2,
+                draggable: true,
+                anchor: "bottom",
+                offset_x: 4,
+                offset_y: 8,
+                rotation: 45,
+            },
+        },
+        {
+            name: "update_marker",
+            payload: {
+                marker_handle: 2,
+                lng: -123.2,
+                lat: 49.3,
+                draggable: false,
+                anchor: null,
+                offset_x: null,
+                offset_y: null,
+                rotation: null,
+            },
+        },
+        {
+            name: "remove_marker",
+            payload: {
+                marker_handle: 2,
+            },
+        },
+    ]);
+});
+
+test("dispatch popup commands choose safe text or trusted html paths", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "create_popup",
+                request_id: 12,
+                handle: 1,
+                options: {
+                    lng: -123.1,
+                    lat: 49.2,
+                    content: { kind: "text", value: "<b>plain text</b>" },
+                    close_button: true,
+                    close_on_click: false,
+                    anchor: "top",
+                    offset_x: 1,
+                    offset_y: 2,
+                    max_width: 320,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(
+        dispatch(
+            {
+                type: "update_popup",
+                popup_handle: 4,
+                options: {
+                    lng: -123.2,
+                    lat: 49.3,
+                    content: { kind: "trusted_html", value: "<strong>trusted</strong>" },
+                    offset_x: null,
+                    offset_y: null,
+                    max_width: 400,
+                },
+            },
+            target,
+        ),
+        { ok: true },
+    );
+    assert.deepEqual(dispatch({ type: "remove_popup", popup_handle: 4 }, target), {
+        ok: true,
+    });
+
+    assert.deepEqual(target.messages, [
+        {
+            type: "popup_created",
+            request_id: 12,
+            popup_handle: 4,
+        },
+    ]);
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "create_popup_text",
+            payload: {
+                handle: 1,
+                lng: -123.1,
+                lat: 49.2,
+                text: "<b>plain text</b>",
+                close_button: true,
+                close_on_click: false,
+                anchor: "top",
+                offset_x: 1,
+                offset_y: 2,
+                max_width: 320,
+            },
+        },
+        {
+            name: "update_popup",
+            payload: {
+                popup_handle: 4,
+                lng: -123.2,
+                lat: 49.3,
+                html: "<strong>trusted</strong>",
+                offset_x: null,
+                offset_y: null,
+                max_width: 400,
+            },
+        },
+        {
+            name: "remove_popup",
+            payload: {
+                popup_handle: 4,
+            },
+        },
+    ]);
+});
+
 test("post_dom_ready emits the dom_ready IPC event", () => {
     const target = test_target();
 

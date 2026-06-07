@@ -35,6 +35,13 @@ function require_map_container(target) {
     return container;
 }
 
+function popup_content_value(content, expected_kind) {
+    if (content?.kind !== expected_kind || typeof content.value !== "string") {
+        throw new Error(`popup content must be ${expected_kind}`);
+    }
+    return content.value;
+}
+
 export function post(payload, target = default_target()) {
     const message = JSON.stringify(payload);
     if (typeof window !== "undefined" && target === window && window.ipc?.postMessage) {
@@ -244,6 +251,146 @@ export function dispatch(command, target = default_target()) {
 
         if (command.type === "set_light") {
             mapCore.set_light(command.handle, command.light);
+            return { ok: true };
+        }
+
+        if (command.type === "add_native_control") {
+            const control_handle = mapCore.add_native_control(
+                command.handle,
+                command.kind,
+                command.anchor,
+                command.options,
+            );
+            post(
+                {
+                    type: "native_control_created",
+                    request_id: command.request_id,
+                    control_handle,
+                },
+                target,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "remove_native_control") {
+            mapCore.remove_native_control(command.control_handle);
+            return { ok: true };
+        }
+
+        if (command.type === "create_marker") {
+            const options = command.options ?? {};
+            const marker_handle = mapCore.create_marker(
+                command.handle,
+                options.lng,
+                options.lat,
+                options.draggable,
+                options.anchor,
+                options.offset_x,
+                options.offset_y,
+                options.rotation,
+            );
+            post(
+                {
+                    type: "marker_created",
+                    request_id: command.request_id,
+                    marker_handle,
+                },
+                target,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "update_marker") {
+            const options = command.options ?? {};
+            mapCore.update_marker(
+                command.marker_handle,
+                options.lng,
+                options.lat,
+                options.draggable,
+                options.anchor,
+                options.offset_x,
+                options.offset_y,
+                options.rotation,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "remove_marker") {
+            mapCore.remove_marker(command.marker_handle);
+            return { ok: true };
+        }
+
+        if (command.type === "create_popup") {
+            const options = command.options ?? {};
+            let popup_handle;
+            if (options.content?.kind === "text") {
+                popup_handle = mapCore.create_popup_text(
+                    command.handle,
+                    options.lng,
+                    options.lat,
+                    popup_content_value(options.content, "text"),
+                    options.close_button,
+                    options.close_on_click,
+                    options.anchor,
+                    options.offset_x,
+                    options.offset_y,
+                    options.max_width,
+                );
+            }
+            else {
+                popup_handle = mapCore.create_popup(
+                    command.handle,
+                    options.lng,
+                    options.lat,
+                    popup_content_value(options.content, "trusted_html"),
+                    options.close_button,
+                    options.close_on_click,
+                    options.anchor,
+                    options.offset_x,
+                    options.offset_y,
+                    options.max_width,
+                );
+            }
+            post(
+                {
+                    type: "popup_created",
+                    request_id: command.request_id,
+                    popup_handle,
+                },
+                target,
+            );
+            return { ok: true };
+        }
+
+        if (command.type === "update_popup") {
+            const options = command.options ?? {};
+            if (options.content?.kind === "text") {
+                mapCore.update_popup_text(
+                    command.popup_handle,
+                    options.lng,
+                    options.lat,
+                    popup_content_value(options.content, "text"),
+                    options.offset_x,
+                    options.offset_y,
+                    options.max_width,
+                );
+            }
+            else {
+                mapCore.update_popup(
+                    command.popup_handle,
+                    options.lng,
+                    options.lat,
+                    popup_content_value(options.content, "trusted_html"),
+                    options.offset_x,
+                    options.offset_y,
+                    options.max_width,
+                );
+            }
+            return { ok: true };
+        }
+
+        if (command.type === "remove_popup") {
+            mapCore.remove_popup(command.popup_handle);
             return { ok: true };
         }
 
