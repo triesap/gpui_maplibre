@@ -407,6 +407,32 @@ mod events_tests {
     }
 
     #[test]
+    fn startup_timing_event_accepts_optional_elapsed_ms() {
+        assert_eq!(
+            parse_ipc_event(r#"{"type":"startup_timing","event":{"milestone":"document_start"}}"#)
+                .unwrap(),
+            MapLibreEvent::StartupTiming {
+                event: StartupTimingEvent {
+                    milestone: "document_start".to_owned(),
+                    elapsed_ms: None,
+                },
+            }
+        );
+        assert_eq!(
+            parse_ipc_event(
+                r#"{"type":"startup_timing","event":{"milestone":"first_render","elapsed_ms":12.5}}"#
+            )
+            .unwrap(),
+            MapLibreEvent::StartupTiming {
+                event: StartupTimingEvent {
+                    milestone: "first_render".to_owned(),
+                    elapsed_ms: Some(12.5),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn maplibre_event_wraps_nested_payloads() {
         let event = serde_json::from_value::<MapLibreEvent>(json!({
             "type": "map",

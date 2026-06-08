@@ -140,6 +140,36 @@ test("dispatch init calls map core and posts initialized handle", () => {
     assert.deepEqual(target.messages.at(-1), { type: "ready", handle: 1 });
 });
 
+test("dispatch init wires startup timing callbacks", () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+
+    dispatch({ type: "init", options: { style_url: "maplibre://styles/basic" } }, target);
+
+    const calls = fakeMapCore.recorded_calls();
+    const startupCallback = calls[2].payload.callback;
+    target.currentTime = 4;
+    startupCallback("load");
+    target.currentTime = 8;
+    startupCallback("first_render");
+    target.currentTime = 13;
+    startupCallback("idle");
+
+    assert.deepEqual(
+        target.messages
+            .filter((message) => message.type === "startup_timing")
+            .map((message) => message.event),
+        [
+            { milestone: "constructor_start", elapsed_ms: 0 },
+            { milestone: "constructor_end", elapsed_ms: 0 },
+            { milestone: "initialized", elapsed_ms: 0 },
+            { milestone: "load", elapsed_ms: 4 },
+            { milestone: "first_render", elapsed_ms: 8 },
+            { milestone: "idle", elapsed_ms: 13 },
+        ],
+    );
+});
+
 test("inline bootstrap contract can rewrite bridge import and dispatch init", async () => {
     const target = test_target();
     fakeMapCore.reset_calls();
