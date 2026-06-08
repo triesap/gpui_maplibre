@@ -4,6 +4,9 @@ const GPUI_MAPLIBRE_CSS: &str = include_str!("../assets/gpui_maplibre.css");
 const MAP_CORE_JS: &str = include_str!("../assets/map_core.js");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
 
+use crate::{MapInitOptions, Result};
+use serde::Serialize;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssetMode {
     /// Load MapLibre GL JS and CSS from CDN script/link tags in the private HTML.
@@ -66,6 +69,61 @@ pub fn private_index_html(asset_mode: &AssetMode) -> String {
         .replace("{{MAPLIBRE_CSS_URL}}", &escape_html_attr(&urls.css_url))
 }
 
+pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> Result<String> {
+    let urls = asset_mode.maplibre_asset_urls();
+    let map_core_source = script_json(map_core_js())?;
+    let bridge_source = script_json(bridge_js())?;
+    let init_options = script_json(options)?;
+
+    Ok(format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{css_url}">
+    <style>{crate_css}</style>
+    <script src="{js_url}"></script>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      const mapCoreSource = {map_core_source};
+      const bridgeSource = {bridge_source};
+      const initOptions = {init_options};
+      const mapCoreUrl = URL.createObjectURL(
+        new Blob([mapCoreSource], {{ type: "text/javascript" }})
+      );
+      const bridgeUrl = URL.createObjectURL(
+        new Blob([
+          bridgeSource.replace(
+            'import * as mapCore from "./map_core.js";',
+            `import * as mapCore from "${{mapCoreUrl}}";`
+          )
+        ], {{ type: "text/javascript" }})
+      );
+
+      import(bridgeUrl).then((bridge) => {{
+        bridge.installed_bridge.dispatch({{ type: "init", options: initOptions }});
+      }}).catch((error) => {{
+        window.ipc?.postMessage(JSON.stringify({{
+          type: "error",
+          context: "bootstrap",
+          message: error instanceof Error ? error.message : String(error)
+        }}));
+      }});
+    </script>
+  </body>
+</html>"#,
+        css_url = escape_html_attr(&urls.css_url),
+        js_url = escape_html_attr(&urls.js_url),
+        crate_css = gpui_maplibre_css(),
+        map_core_source = map_core_source,
+        bridge_source = bridge_source,
+        init_options = init_options,
+    ))
+}
+
 pub fn gpui_maplibre_css() -> &'static str {
     GPUI_MAPLIBRE_CSS
 }
@@ -84,6 +142,10 @@ fn escape_html_attr(value: &str) -> String {
         .replace('"', "&quot;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn script_json(value: impl Serialize) -> Result<String> {
+    Ok(serde_json::to_string(&value)?.replace("</", "<\\/"))
 }
 
 #[cfg(test)]
@@ -148,6 +210,29 @@ mod tests {
         assert!(css.contains("#map"));
         assert!(css.contains("height: 100%"));
         assert!(css.contains("overflow: hidden"));
+    }
+
+    #[test]
+    fn inline_webview_html_embeds_private_bridge_assets() {
+        let html = inline_webview_html(&AssetMode::default(), &MapInitOptions::default()).unwrap();
+
+        assert!(html.contains("const mapCoreSource = "));
+        assert!(html.contains("const bridgeSource = "));
+        assert!(html.contains("bridge.installed_bridge.dispatch"));
+        assert!(html.contains("type: \"init\""));
+        assert!(html.contains("maplibre-gl@5.13.0"));
+        assert!(!html.contains(r#"src="./bridge.js""#));
+        assert!(!html.contains(r#"href="./gpui_maplibre.css""#));
+    }
+
+    #[test]
+    fn inline_webview_html_escapes_script_breaking_options() {
+        let options = MapInitOptions::default()
+            .with_style_url(r#"https://example.test/style.json?</script><script>"#);
+        let html = inline_webview_html(&AssetMode::default(), &options).unwrap();
+
+        assert!(html.contains(r#"<\/script><script>"#));
+        assert!(!html.contains(r#"?</script><script>"#));
     }
 
     #[test]
