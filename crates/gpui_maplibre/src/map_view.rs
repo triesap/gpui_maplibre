@@ -65,7 +65,7 @@ fn build_wry_webview(
 pub struct MapLibreViewConfig {
     /// Initial MapLibre options dispatched when the WebView bootstraps.
     pub options: MapInitOptions,
-    /// Source for MapLibre GL JS and CSS assets.
+    /// Source for MapLibre GL JS and CSS runtime assets.
     pub asset_mode: AssetMode,
 }
 
@@ -79,7 +79,7 @@ impl Default for MapLibreViewConfig {
 }
 
 impl MapLibreViewConfig {
-    /// Create a config with the default asset mode.
+    /// Create a config with the default CDN-backed runtime asset mode.
     pub fn new(options: MapInitOptions) -> Self {
         Self {
             options,
@@ -88,12 +88,17 @@ impl MapLibreViewConfig {
     }
 
     /// Override the MapLibre GL JS and CSS runtime assets.
+    ///
+    /// Use [`MapLibreAssets::vendored`] with the `vendored-maplibre` Cargo feature to run without
+    /// fetching MapLibre GL JS/CSS from the network.
     pub fn with_assets(mut self, assets: MapLibreAssets) -> Self {
         self.asset_mode = assets;
         self
     }
 
     /// Override the MapLibre GL JS and CSS runtime assets.
+    ///
+    /// This compatibility helper delegates to [`Self::with_assets`].
     pub fn with_asset_mode(self, asset_mode: AssetMode) -> Self {
         self.with_assets(asset_mode)
     }

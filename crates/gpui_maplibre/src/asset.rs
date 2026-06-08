@@ -14,27 +14,47 @@ use crate::{MapInitOptions, Result};
 use serde::Serialize;
 use std::borrow::Cow;
 
+/// Source for the MapLibre GL JS and CSS runtime used by the WebView.
+///
+/// Vendored runtime assets remove the MapLibre GL JS/CSS network dependency. Map styles, tiles,
+/// glyphs, sprites, and data sources still use the URLs configured in [`MapInitOptions`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MapLibreAssets {
+    /// Load MapLibre GL JS and CSS from the public unpkg CDN for a specific version.
     Cdn {
+        /// MapLibre GL JS package version.
         version: String,
     },
+    /// Embed the crate-pinned MapLibre GL JS and CSS files.
+    ///
+    /// This requires the `vendored-maplibre` Cargo feature. Without that feature,
+    /// WebView HTML generation returns a [`MapLibreError`](crate::MapLibreError).
     Vendored,
+    /// Embed application-provided MapLibre GL JS and CSS source strings.
     Inline {
+        /// JavaScript source for the MapLibre GL runtime.
         js: Cow<'static, str>,
+        /// CSS source for the MapLibre GL runtime.
         css: Cow<'static, str>,
     },
+    /// Load MapLibre GL JS and CSS from application-provided URLs.
     Urls {
+        /// URL for the MapLibre GL JavaScript runtime.
         js_url: String,
+        /// URL for the MapLibre GL stylesheet.
         css_url: String,
     },
 }
 
+/// Backward-compatible alias for the MapLibre GL runtime asset selector.
 pub type AssetMode = MapLibreAssets;
 
+/// Resolved external MapLibre GL JS and CSS URLs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapLibreAssetUrls {
+    /// URL for the MapLibre GL JavaScript runtime.
     pub js_url: String,
+    /// URL for the MapLibre GL stylesheet.
     pub css_url: String,
 }
 
@@ -56,16 +76,19 @@ impl Default for MapLibreAssets {
 }
 
 impl MapLibreAssets {
+    /// Load MapLibre GL JS and CSS from unpkg for `version`.
     pub fn cdn(version: impl Into<String>) -> Self {
         Self::Cdn {
             version: version.into(),
         }
     }
 
+    /// Use the crate-pinned MapLibre GL JS and CSS runtime assets.
     pub fn vendored() -> Self {
         Self::Vendored
     }
 
+    /// Embed application-provided MapLibre GL JS and CSS source strings.
     pub fn inline(js: impl Into<Cow<'static, str>>, css: impl Into<Cow<'static, str>>) -> Self {
         Self::Inline {
             js: js.into(),
@@ -73,6 +96,7 @@ impl MapLibreAssets {
         }
     }
 
+    /// Load MapLibre GL JS and CSS from application-provided URLs.
     pub fn urls(js_url: impl Into<String>, css_url: impl Into<String>) -> Self {
         Self::Urls {
             js_url: js_url.into(),
@@ -80,10 +104,15 @@ impl MapLibreAssets {
         }
     }
 
+    /// Load MapLibre GL JS and CSS from application-provided URLs.
     pub fn custom(js_url: impl Into<String>, css_url: impl Into<String>) -> Self {
         Self::urls(js_url, css_url)
     }
 
+    /// Return the external URL representation for CDN and URL-backed assets.
+    ///
+    /// Inline and vendored assets return stable `inline://` sentinel URLs for compatibility with
+    /// low-level callers that inspect the asset mode without rendering inline WebView HTML.
     pub fn maplibre_asset_urls(&self) -> MapLibreAssetUrls {
         match self {
             Self::Cdn { version } => MapLibreAssetUrls {
