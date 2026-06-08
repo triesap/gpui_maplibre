@@ -1,4 +1,7 @@
-use crate::asset::{inline_webview_html, private_index_html};
+use crate::asset::{
+    ASSET_PROTOCOL_SCHEME, inline_webview_html, private_index_html, protocol_asset_response,
+    protocol_webview_url,
+};
 use crate::runtime::{
     EventRouter, EventRouterAction, EventSubscriptionRegistry, RoutedError, RuntimeCommandAction,
     RuntimeCommandQueue, ViewLifecycle, route_ipc_message,
@@ -6,12 +9,13 @@ use crate::runtime::{
 use crate::subscription::{EventSubscription, EventSubscriptionTarget};
 use crate::{
     AssetMode, CommandTransport, FakeTransport, MapController, MapHandle, MapInitOptions,
-    MapLibreAssets,
+    MapLibreAssets, ProtocolAssetResponse,
 };
 use crate::{MapCommand, MapLibreError, MapLibreEvent, Result};
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div,
 };
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -80,16 +84,57 @@ fn build_wry_webview(
     visible: bool,
     window: &mut Window,
 ) -> Result<wry::WebView> {
-    let html = config.inline_webview_html()?;
+    let asset_mode = config.asset_mode.clone();
+    let options = config.options.clone();
 
-    wry::WebViewBuilder::new()
+    let builder = wry::WebViewBuilder::new()
         .with_visible(visible)
-        .with_html(html)
         .with_ipc_handler(move |request| {
             ipc_inbox.borrow_mut().push_back(request.body().clone());
-        })
+        });
+    let builder = if config.uses_asset_protocol() {
+        builder
+            .with_custom_protocol(ASSET_PROTOCOL_SCHEME.to_owned(), move |_, request| {
+                wry_protocol_response(request, &asset_mode, &options)
+            })
+            .with_url(protocol_webview_url())
+    } else {
+        builder.with_html(config.inline_webview_html()?)
+    };
+
+    builder
         .build_as_child(window)
         .map_err(|error| MapLibreError::platform(error.to_string()))
+}
+
+fn wry_protocol_response(
+    request: wry::http::Request<Vec<u8>>,
+    asset_mode: &AssetMode,
+    options: &MapInitOptions,
+) -> wry::http::Response<Cow<'static, [u8]>> {
+    match protocol_asset_response(request.uri().path(), asset_mode, options) {
+        Ok(Some(response)) => ok_protocol_response(response),
+        Ok(None) => text_protocol_response(404, "gpui_maplibre asset not found"),
+        Err(error) => text_protocol_response(500, &error.to_string()),
+    }
+}
+
+fn ok_protocol_response(
+    response: ProtocolAssetResponse,
+) -> wry::http::Response<Cow<'static, [u8]>> {
+    wry::http::Response::builder()
+        .status(200)
+        .header(wry::http::header::CONTENT_TYPE, response.content_type)
+        .body(response.body)
+        .expect("protocol response should be valid")
+}
+
+fn text_protocol_response(status: u16, message: &str) -> wry::http::Response<Cow<'static, [u8]>> {
+    wry::http::Response::builder()
+        .status(status)
+        .header(wry::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(Cow::Owned(message.as_bytes().to_vec()))
+        .expect("protocol error response should be valid")
 }
 
 /// Configuration for a mounted MapLibre view.
@@ -138,6 +183,11 @@ impl MapLibreViewConfig {
     /// Return the configured MapLibre GL JS and CSS runtime assets.
     pub fn assets(&self) -> &MapLibreAssets {
         &self.asset_mode
+    }
+
+    /// Return true when mounted WebViews should load crate assets through the custom protocol.
+    pub fn uses_asset_protocol(&self) -> bool {
+        matches!(self.asset_mode, AssetMode::Vendored)
     }
 
     /// Build the private file-backed HTML used by low-level integrations.
@@ -618,6 +668,20 @@ mod tests {
         assert!(html.contains("bridge.installed_bridge.dispatch"));
         assert!(html.contains("\"zoom\":4.0"));
         assert!(!html.contains(r#"src="./bridge.js""#));
+    }
+
+    #[test]
+    fn map_view_config_uses_protocol_for_vendored_runtime() {
+        assert!(
+            MapLibreViewConfig::default()
+                .with_assets(MapLibreAssets::vendored())
+                .uses_asset_protocol()
+        );
+        assert!(
+            !MapLibreViewConfig::default()
+                .with_assets(MapLibreAssets::cdn("5.13.0"))
+                .uses_asset_protocol()
+        );
     }
 
     #[test]
