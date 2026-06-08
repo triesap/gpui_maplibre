@@ -89,6 +89,64 @@ test("dispatch init calls map core and posts initialized handle", () => {
     ]);
 });
 
+test("inline bootstrap contract can rewrite bridge import and dispatch init", async () => {
+    const target = test_target();
+    fakeMapCore.reset_calls();
+    const previousDocument = globalThis.document;
+    const previousIpc = globalThis.ipc;
+
+    globalThis.document = target.document;
+    globalThis.ipc = target.ipc;
+
+    assert.equal(
+        bridgeSource.match(/import \* as mapCore from "\.\/map_core\.js";/g)?.length,
+        1,
+    );
+
+    try {
+        const { installed_bridge: inlineBridge } = await import(
+            `${bridgeModuleUrl}#inline-bootstrap`
+        );
+
+        assert.deepEqual(
+            inlineBridge.dispatch({
+                type: "init",
+                options: { style_url: "maplibre://styles/basic" },
+            }),
+            { ok: true },
+        );
+    }
+    finally {
+        if (previousDocument === undefined) {
+            delete globalThis.document;
+        }
+        else {
+            globalThis.document = previousDocument;
+        }
+
+        if (previousIpc === undefined) {
+            delete globalThis.ipc;
+        }
+        else {
+            globalThis.ipc = previousIpc;
+        }
+    }
+
+    assert.deepEqual(target.messages, [
+        { type: "dom_ready" },
+        { type: "initialized", handle: 1 },
+    ]);
+    assert.deepEqual(fakeMapCore.recorded_calls(), [
+        {
+            name: "init_map",
+            payload: {
+                container: target.mapElement,
+                options: { style_url: "maplibre://styles/basic" },
+            },
+        },
+    ]);
+});
+
 test("dispatch lifecycle and style commands call map core", () => {
     const target = test_target();
     fakeMapCore.reset_calls();
