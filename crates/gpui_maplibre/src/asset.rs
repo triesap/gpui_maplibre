@@ -7,6 +7,9 @@ const VENDORED_MAPLIBRE_JS: &str = include_str!("../assets/vendor/maplibre-gl.js
 #[cfg(feature = "vendored-maplibre")]
 const VENDORED_MAPLIBRE_CSS: &str = include_str!("../assets/vendor/maplibre-gl.css");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
+pub const ASSET_PROTOCOL_SCHEME: &str = "gpui-maplibre";
+pub const ASSET_PROTOCOL_ORIGIN: &str = "gpui-maplibre://localhost";
+pub const ASSET_PROTOCOL_INDEX_PATH: &str = "/index.html";
 
 #[cfg(not(feature = "vendored-maplibre"))]
 use crate::MapLibreError;
@@ -56,6 +59,12 @@ pub struct MapLibreAssetUrls {
     pub js_url: String,
     /// URL for the MapLibre GL stylesheet.
     pub css_url: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtocolAssetResponse {
+    pub content_type: &'static str,
+    pub body: Cow<'static, [u8]>,
 }
 
 enum RuntimeAssets<'a> {
@@ -217,6 +226,88 @@ pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> 
     ))
 }
 
+pub fn protocol_webview_url() -> &'static str {
+    ASSET_PROTOCOL_ORIGIN
+}
+
+pub fn protocol_asset_url(path: &str) -> String {
+    format!("{ASSET_PROTOCOL_ORIGIN}{}", normalize_protocol_path(path))
+}
+
+pub fn protocol_index_html(asset_mode: &AssetMode, options: &MapInitOptions) -> Result<String> {
+    let runtime_assets = protocol_runtime_assets(asset_mode)?;
+    let init_options = script_json(options)?;
+    let bridge_url = protocol_asset_url("/bridge.js");
+
+    Ok(format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+      window.__gpui_maplibre_boot_started_at = performance.now();
+      window.ipc?.postMessage(JSON.stringify({{
+        type: "startup_timing",
+        event: {{ milestone: "document_start", elapsed_ms: 0 }}
+      }}));
+    </script>
+    {runtime_assets}
+    <link rel="stylesheet" href="{crate_css_url}">
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      import {{ installed_bridge }} from "{bridge_url}";
+      const initOptions = {init_options};
+
+      installed_bridge.dispatch({{ type: "init", options: initOptions }});
+    </script>
+  </body>
+</html>"#,
+        runtime_assets = runtime_assets,
+        crate_css_url = protocol_asset_url("/gpui_maplibre.css"),
+        bridge_url = escape_html_attr(&bridge_url),
+        init_options = init_options,
+    ))
+}
+
+pub fn protocol_asset_response(
+    path: &str,
+    asset_mode: &AssetMode,
+    options: &MapInitOptions,
+) -> Result<Option<ProtocolAssetResponse>> {
+    let path = normalize_protocol_path(path);
+    let response = match path.as_str() {
+        "/" | "/index.html" => ProtocolAssetResponse {
+            content_type: "text/html; charset=utf-8",
+            body: Cow::Owned(protocol_index_html(asset_mode, options)?.into_bytes()),
+        },
+        "/bridge.js" => ProtocolAssetResponse {
+            content_type: "text/javascript; charset=utf-8",
+            body: Cow::Borrowed(bridge_js().as_bytes()),
+        },
+        "/map_core.js" => ProtocolAssetResponse {
+            content_type: "text/javascript; charset=utf-8",
+            body: Cow::Borrowed(map_core_js().as_bytes()),
+        },
+        "/gpui_maplibre.css" => ProtocolAssetResponse {
+            content_type: "text/css; charset=utf-8",
+            body: Cow::Borrowed(gpui_maplibre_css().as_bytes()),
+        },
+        "/vendor/maplibre-gl.js" => vendored_protocol_asset_response(
+            "text/javascript; charset=utf-8",
+            VendoredProtocolAsset::Js,
+        )?,
+        "/vendor/maplibre-gl.css" => {
+            vendored_protocol_asset_response("text/css; charset=utf-8", VendoredProtocolAsset::Css)?
+        }
+        _ => return Ok(None),
+    };
+
+    Ok(Some(response))
+}
+
 #[cfg(feature = "vendored-maplibre")]
 fn vendored_runtime_assets() -> Result<RuntimeAssets<'static>> {
     Ok(RuntimeAssets::Inline {
@@ -232,6 +323,50 @@ fn vendored_runtime_assets() -> Result<RuntimeAssets<'static>> {
     ))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VendoredProtocolAsset {
+    Js,
+    Css,
+}
+
+#[cfg(feature = "vendored-maplibre")]
+fn vendored_protocol_asset_response(
+    content_type: &'static str,
+    asset: VendoredProtocolAsset,
+) -> Result<ProtocolAssetResponse> {
+    let body = match asset {
+        VendoredProtocolAsset::Js => VENDORED_MAPLIBRE_JS.as_bytes(),
+        VendoredProtocolAsset::Css => VENDORED_MAPLIBRE_CSS.as_bytes(),
+    };
+
+    Ok(ProtocolAssetResponse {
+        content_type,
+        body: Cow::Borrowed(body),
+    })
+}
+
+#[cfg(not(feature = "vendored-maplibre"))]
+fn vendored_protocol_asset_response(
+    _: &'static str,
+    _: VendoredProtocolAsset,
+) -> Result<ProtocolAssetResponse> {
+    Err(MapLibreError::asset(
+        "vendored MapLibre GL assets require the vendored-maplibre feature",
+    ))
+}
+
+fn protocol_runtime_assets(asset_mode: &AssetMode) -> Result<String> {
+    match asset_mode {
+        AssetMode::Vendored => Ok(format!(
+            r#"<link rel="stylesheet" href="{css_url}">
+    <script src="{js_url}"></script>"#,
+            css_url = protocol_asset_url("/vendor/maplibre-gl.css"),
+            js_url = protocol_asset_url("/vendor/maplibre-gl.js"),
+        )),
+        _ => Ok(maplibre_runtime_html(&asset_mode.runtime_assets()?)),
+    }
+}
+
 fn maplibre_runtime_html(runtime_assets: &RuntimeAssets<'_>) -> String {
     match runtime_assets {
         RuntimeAssets::External { js_url, css_url } => format!(
@@ -244,6 +379,18 @@ fn maplibre_runtime_html(runtime_assets: &RuntimeAssets<'_>) -> String {
             r#"<style data-gpui-maplibre-runtime-css>{css}</style>
     <script data-gpui-maplibre-runtime-js>{js}</script>"#
         ),
+    }
+}
+
+fn normalize_protocol_path(path: &str) -> String {
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    if path.is_empty() || path == "/" {
+        return ASSET_PROTOCOL_INDEX_PATH.to_owned();
+    }
+    if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
     }
 }
 
@@ -381,6 +528,74 @@ mod tests {
         assert!(html.contains("data-gpui-maplibre-runtime-css"));
         assert!(html.contains("globalThis.maplibregl"));
         assert!(!html.contains("https://unpkg.com"));
+    }
+
+    #[test]
+    fn protocol_asset_response_serves_crate_runtime_files() {
+        let options = MapInitOptions::default();
+        let html = protocol_asset_response("/index.html", &AssetMode::default(), &options)
+            .unwrap()
+            .expect("index response");
+        let bridge = protocol_asset_response("/bridge.js", &AssetMode::default(), &options)
+            .unwrap()
+            .expect("bridge response");
+        let map_core = protocol_asset_response("/map_core.js", &AssetMode::default(), &options)
+            .unwrap()
+            .expect("map core response");
+        let css = protocol_asset_response("/gpui_maplibre.css", &AssetMode::default(), &options)
+            .unwrap()
+            .expect("crate css response");
+
+        assert_eq!(html.content_type, "text/html; charset=utf-8");
+        assert_eq!(bridge.content_type, "text/javascript; charset=utf-8");
+        assert_eq!(map_core.content_type, "text/javascript; charset=utf-8");
+        assert_eq!(css.content_type, "text/css; charset=utf-8");
+        assert!(String::from_utf8_lossy(&html.body).contains("installed_bridge.dispatch"));
+        assert!(String::from_utf8_lossy(&bridge.body).contains("window.__gpui_maplibre.dispatch"));
+        assert!(String::from_utf8_lossy(&map_core.body).contains("export function init_map"));
+        assert!(String::from_utf8_lossy(&css.body).contains("#map"));
+    }
+
+    #[cfg(feature = "vendored-maplibre")]
+    #[test]
+    fn vendored_protocol_index_references_runtime_urls() {
+        let options = MapInitOptions::default();
+        let response =
+            protocol_asset_response("/index.html", &MapLibreAssets::vendored(), &options)
+                .unwrap()
+                .expect("index response");
+        let html = String::from_utf8(response.body.into_owned()).unwrap();
+
+        assert!(html.contains(r#"src="gpui-maplibre://localhost/vendor/maplibre-gl.js""#));
+        assert!(html.contains(r#"href="gpui-maplibre://localhost/vendor/maplibre-gl.css""#));
+        assert!(html.contains(r#"href="gpui-maplibre://localhost/gpui_maplibre.css""#));
+        assert!(!html.contains("data-gpui-maplibre-runtime-js"));
+        assert!(!html.contains("maplibregl.LngLat"));
+    }
+
+    #[cfg(feature = "vendored-maplibre")]
+    #[test]
+    fn vendored_protocol_asset_response_serves_pinned_runtime() {
+        let options = MapInitOptions::default();
+        let js = protocol_asset_response(
+            "/vendor/maplibre-gl.js",
+            &MapLibreAssets::vendored(),
+            &options,
+        )
+        .unwrap()
+        .expect("vendored js");
+        let css = protocol_asset_response(
+            "/vendor/maplibre-gl.css",
+            &MapLibreAssets::vendored(),
+            &options,
+        )
+        .unwrap()
+        .expect("vendored css");
+
+        assert_eq!(js.content_type, "text/javascript; charset=utf-8");
+        assert_eq!(css.content_type, "text/css; charset=utf-8");
+        assert!(String::from_utf8_lossy(&js.body).contains("maplibregl"));
+        assert!(String::from_utf8_lossy(&css.body).contains("maplibregl"));
     }
 
     #[test]

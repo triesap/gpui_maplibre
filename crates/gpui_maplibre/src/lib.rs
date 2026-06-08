@@ -22,7 +22,11 @@ pub mod types;
 
 mod script;
 
-pub use asset::{AssetMode, MapLibreAssetUrls, MapLibreAssets};
+pub use asset::{
+    ASSET_PROTOCOL_INDEX_PATH, ASSET_PROTOCOL_ORIGIN, ASSET_PROTOCOL_SCHEME, AssetMode,
+    MapLibreAssetUrls, MapLibreAssets, ProtocolAssetResponse, protocol_asset_response,
+    protocol_asset_url, protocol_index_html, protocol_webview_url,
+};
 pub use command::MapCommand;
 pub use control::{NativeControlKind, NativeControlOptions as AddNativeControlOptions};
 pub use controller::MapController;
