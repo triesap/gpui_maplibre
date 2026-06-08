@@ -446,13 +446,19 @@ mod tests {
 
     #[test]
     fn map_view_config_keeps_assets_private() {
-        let config = MapLibreViewConfig::new(MapInitOptions::default())
-            .with_asset_mode(AssetMode::VendoredPlaceholder);
+        let asset_mode = AssetMode::urls("./vendor/maplibre-gl.js", "./vendor/maplibre-gl.css");
+        let config =
+            MapLibreViewConfig::new(MapInitOptions::default()).with_asset_mode(asset_mode.clone());
         let stub = MapLibreWebViewStub::new(config);
 
-        assert_eq!(stub.config().asset_mode, AssetMode::VendoredPlaceholder);
+        assert_eq!(stub.config().asset_mode, asset_mode);
         assert!(stub.config().private_html().contains(r#"id="map""#));
         assert!(stub.config().private_html().contains(r#"./bridge.js"#));
+        assert!(
+            stub.config()
+                .private_html()
+                .contains("./vendor/maplibre-gl.js")
+        );
     }
 
     #[test]

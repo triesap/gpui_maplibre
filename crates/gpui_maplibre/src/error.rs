@@ -8,6 +8,7 @@ pub enum MapLibreError {
     Serialization { source: serde_json::Error },
     InvalidEvent { source: serde_json::Error },
     Transport { message: String },
+    Asset { message: String },
     NotReady { context: String },
     MissingHandle { context: String },
     Platform { message: String },
@@ -20,6 +21,12 @@ impl MapLibreError {
 
     pub fn transport(message: impl Into<String>) -> Self {
         Self::Transport {
+            message: message.into(),
+        }
+    }
+
+    pub fn asset(message: impl Into<String>) -> Self {
+        Self::Asset {
             message: message.into(),
         }
     }
@@ -55,6 +62,9 @@ impl fmt::Display for MapLibreError {
             Self::Transport { message } => {
                 write!(formatter, "MapLibre transport failed: {message}")
             }
+            Self::Asset { message } => {
+                write!(formatter, "MapLibre asset loading failed: {message}")
+            }
             Self::NotReady { context } => {
                 write!(formatter, "MapLibre runtime is not ready: {context}")
             }
@@ -73,6 +83,7 @@ impl Error for MapLibreError {
         match self {
             Self::Serialization { source } | Self::InvalidEvent { source } => Some(source),
             Self::Transport { .. }
+            | Self::Asset { .. }
             | Self::NotReady { .. }
             | Self::MissingHandle { .. }
             | Self::Platform { .. } => None,
@@ -107,6 +118,10 @@ mod tests {
         assert_eq!(
             MapLibreError::platform("missing WebKitGTK").to_string(),
             "MapLibre platform integration failed: missing WebKitGTK"
+        );
+        assert_eq!(
+            MapLibreError::asset("vendored runtime assets are not enabled").to_string(),
+            "MapLibre asset loading failed: vendored runtime assets are not enabled"
         );
     }
 

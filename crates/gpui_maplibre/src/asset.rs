@@ -4,18 +4,27 @@ const GPUI_MAPLIBRE_CSS: &str = include_str!("../assets/gpui_maplibre.css");
 const MAP_CORE_JS: &str = include_str!("../assets/map_core.js");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
 
-use crate::{MapInitOptions, Result};
+use crate::{MapInitOptions, MapLibreError, Result};
 use serde::Serialize;
+use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AssetMode {
-    /// Load MapLibre GL JS and CSS from CDN script/link tags in the private HTML.
-    Cdn { version: String },
-    /// Reserve relative vendored URLs for future local packaging without network access.
-    VendoredPlaceholder,
-    /// Load caller-provided MapLibre GL JS and CSS URLs in the private HTML.
-    Custom { js_url: String, css_url: String },
+pub enum MapLibreAssets {
+    Cdn {
+        version: String,
+    },
+    Vendored,
+    Inline {
+        js: Cow<'static, str>,
+        css: Cow<'static, str>,
+    },
+    Urls {
+        js_url: String,
+        css_url: String,
+    },
 }
+
+pub type AssetMode = MapLibreAssets;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapLibreAssetUrls {
@@ -23,24 +32,50 @@ pub struct MapLibreAssetUrls {
     pub css_url: String,
 }
 
-impl Default for AssetMode {
+enum RuntimeAssets<'a> {
+    External {
+        js_url: Cow<'a, str>,
+        css_url: Cow<'a, str>,
+    },
+    Inline {
+        js: Cow<'a, str>,
+        css: Cow<'a, str>,
+    },
+}
+
+impl Default for MapLibreAssets {
     fn default() -> Self {
         Self::cdn(DEFAULT_CDN_VERSION)
     }
 }
 
-impl AssetMode {
+impl MapLibreAssets {
     pub fn cdn(version: impl Into<String>) -> Self {
         Self::Cdn {
             version: version.into(),
         }
     }
 
-    pub fn custom(js_url: impl Into<String>, css_url: impl Into<String>) -> Self {
-        Self::Custom {
+    pub fn vendored() -> Self {
+        Self::Vendored
+    }
+
+    pub fn inline(js: impl Into<Cow<'static, str>>, css: impl Into<Cow<'static, str>>) -> Self {
+        Self::Inline {
+            js: js.into(),
+            css: css.into(),
+        }
+    }
+
+    pub fn urls(js_url: impl Into<String>, css_url: impl Into<String>) -> Self {
+        Self::Urls {
             js_url: js_url.into(),
             css_url: css_url.into(),
         }
+    }
+
+    pub fn custom(js_url: impl Into<String>, css_url: impl Into<String>) -> Self {
+        Self::urls(js_url, css_url)
     }
 
     pub fn maplibre_asset_urls(&self) -> MapLibreAssetUrls {
@@ -49,14 +84,31 @@ impl AssetMode {
                 js_url: format!("https://unpkg.com/maplibre-gl@{version}/dist/maplibre-gl.js"),
                 css_url: format!("https://unpkg.com/maplibre-gl@{version}/dist/maplibre-gl.css"),
             },
-            Self::VendoredPlaceholder => MapLibreAssetUrls {
-                js_url: "./vendor/maplibre-gl.js".to_owned(),
-                css_url: "./vendor/maplibre-gl.css".to_owned(),
+            Self::Vendored | Self::Inline { .. } => MapLibreAssetUrls {
+                js_url: "inline://maplibre-gl.js".to_owned(),
+                css_url: "inline://maplibre-gl.css".to_owned(),
             },
-            Self::Custom { js_url, css_url } => MapLibreAssetUrls {
+            Self::Urls { js_url, css_url } => MapLibreAssetUrls {
                 js_url: js_url.clone(),
                 css_url: css_url.clone(),
             },
+        }
+    }
+
+    fn runtime_assets(&self) -> Result<RuntimeAssets<'_>> {
+        match self {
+            Self::Cdn { .. } | Self::Urls { .. } => {
+                let urls = self.maplibre_asset_urls();
+                Ok(RuntimeAssets::External {
+                    js_url: Cow::Owned(urls.js_url),
+                    css_url: Cow::Owned(urls.css_url),
+                })
+            }
+            Self::Inline { js, css } => Ok(RuntimeAssets::Inline {
+                js: Cow::Borrowed(js.as_ref()),
+                css: Cow::Borrowed(css.as_ref()),
+            }),
+            Self::Vendored => vendored_runtime_assets(),
         }
     }
 }
@@ -70,10 +122,11 @@ pub fn private_index_html(asset_mode: &AssetMode) -> String {
 }
 
 pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> Result<String> {
-    let urls = asset_mode.maplibre_asset_urls();
+    let runtime_assets = asset_mode.runtime_assets()?;
     let map_core_source = script_json(map_core_js())?;
     let bridge_source = script_json(bridge_js())?;
     let init_options = script_json(options)?;
+    let maplibre_runtime = maplibre_runtime_html(&runtime_assets);
 
     Ok(format!(
         r#"<!doctype html>
@@ -81,9 +134,8 @@ pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> 
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="{css_url}">
+    {maplibre_runtime}
     <style>{crate_css}</style>
-    <script src="{js_url}"></script>
   </head>
   <body>
     <div id="map"></div>
@@ -115,13 +167,33 @@ pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> 
     </script>
   </body>
 </html>"#,
-        css_url = escape_html_attr(&urls.css_url),
-        js_url = escape_html_attr(&urls.js_url),
+        maplibre_runtime = maplibre_runtime,
         crate_css = gpui_maplibre_css(),
         map_core_source = map_core_source,
         bridge_source = bridge_source,
         init_options = init_options,
     ))
+}
+
+fn vendored_runtime_assets() -> Result<RuntimeAssets<'static>> {
+    Err(MapLibreError::asset(
+        "vendored MapLibre GL assets require the vendored-maplibre feature",
+    ))
+}
+
+fn maplibre_runtime_html(runtime_assets: &RuntimeAssets<'_>) -> String {
+    match runtime_assets {
+        RuntimeAssets::External { js_url, css_url } => format!(
+            r#"<link rel="stylesheet" href="{css_url}">
+    <script src="{js_url}"></script>"#,
+            css_url = escape_html_attr(css_url),
+            js_url = escape_html_attr(js_url),
+        ),
+        RuntimeAssets::Inline { js, css } => format!(
+            r#"<style data-gpui-maplibre-runtime-css>{css}</style>
+    <script data-gpui-maplibre-runtime-js>{js}</script>"#
+        ),
+    }
 }
 
 pub fn gpui_maplibre_css() -> &'static str {
@@ -169,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn asset_html_supports_cdn_vendored_and_custom_modes() {
+    fn asset_html_supports_cdn_and_custom_url_modes() {
         let cdn = AssetMode::cdn("5.14.0").maplibre_asset_urls();
         assert_eq!(
             cdn.js_url,
@@ -179,10 +251,6 @@ mod tests {
             cdn.css_url,
             "https://unpkg.com/maplibre-gl@5.14.0/dist/maplibre-gl.css"
         );
-
-        let vendored = AssetMode::VendoredPlaceholder.maplibre_asset_urls();
-        assert_eq!(vendored.js_url, "./vendor/maplibre-gl.js");
-        assert_eq!(vendored.css_url, "./vendor/maplibre-gl.css");
 
         let custom = private_index_html(&AssetMode::custom(
             "app://assets/maplibre.js",
@@ -226,6 +294,31 @@ mod tests {
     }
 
     #[test]
+    fn maplibre_assets_exposes_vendored_runtime_api() {
+        let vendored = MapLibreAssets::vendored();
+        let error = inline_webview_html(&vendored, &MapInitOptions::default()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "MapLibre asset loading failed: vendored MapLibre GL assets require the vendored-maplibre feature"
+        );
+    }
+
+    #[test]
+    fn inline_webview_html_supports_app_owned_runtime_assets() {
+        let assets = MapLibreAssets::inline(
+            "globalThis.maplibregl = { Map: function() {} };",
+            ".maplibregl-map { position: relative; }",
+        );
+        let html = inline_webview_html(&assets, &MapInitOptions::default()).unwrap();
+
+        assert!(html.contains("data-gpui-maplibre-runtime-js"));
+        assert!(html.contains("data-gpui-maplibre-runtime-css"));
+        assert!(html.contains("globalThis.maplibregl"));
+        assert!(!html.contains("https://unpkg.com"));
+    }
+
+    #[test]
     fn inline_webview_html_escapes_script_breaking_options() {
         let options = MapInitOptions::default()
             .with_style_url(r#"https://example.test/style.json?</script><script>"#);
@@ -261,7 +354,10 @@ mod tests {
     fn map_core_asset_mode_contract_supports_configured_maplibre_loading() {
         let js = map_core_js();
         let cdn_html = private_index_html(&AssetMode::cdn("5.13.0"));
-        let vendored_html = private_index_html(&AssetMode::VendoredPlaceholder);
+        let local_html = private_index_html(&AssetMode::urls(
+            "./vendor/maplibre-gl.js",
+            "./vendor/maplibre-gl.css",
+        ));
 
         assert!(!js.contains("https://esm.sh/maplibre-gl"));
         assert!(js.contains("export function configure_maplibre_gl"));
@@ -269,8 +365,8 @@ mod tests {
         assert!(js.contains("globalThis.maplibregl"));
         assert!(js.contains("await import(module_url)"));
         assert!(cdn_html.contains("https://unpkg.com/maplibre-gl@5.13.0"));
-        assert!(vendored_html.contains("./vendor/maplibre-gl.js"));
-        assert!(vendored_html.contains("./vendor/maplibre-gl.css"));
+        assert!(local_html.contains("./vendor/maplibre-gl.js"));
+        assert!(local_html.contains("./vendor/maplibre-gl.css"));
     }
 
     #[test]
