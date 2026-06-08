@@ -20,7 +20,8 @@ const bridgeTestSource = bridgeSource.replace(
 const bridgeModuleUrl = `data:text/javascript;base64,${Buffer.from(bridgeTestSource).toString(
     "base64",
 )}`;
-const { dispatch, install_bridge, post, post_dom_ready } = await import(bridgeModuleUrl);
+const { dispatch, install_bridge, post, post_dom_ready, post_startup_timing } =
+    await import(bridgeModuleUrl);
 
 function test_target() {
     const messages = [];
@@ -29,6 +30,7 @@ function test_target() {
         messages,
         mapElement,
         currentTime: 0,
+        __gpui_maplibre_boot_started_at: 0,
         now() {
             return this.currentTime;
         },
@@ -54,6 +56,23 @@ test("post serializes payloads through ipc.postMessage", () => {
     assert.deepEqual(target.messages, [{ type: "dom_ready" }]);
 });
 
+test("post_startup_timing emits elapsed startup milestones", () => {
+    const target = test_target();
+    target.currentTime = 12.5;
+
+    post_startup_timing("bridge_imported", target);
+
+    assert.deepEqual(target.messages, [
+        {
+            type: "startup_timing",
+            event: {
+                milestone: "bridge_imported",
+                elapsed_ms: 12.5,
+            },
+        },
+    ]);
+});
+
 test("dispatch init calls map core and posts initialized handle", () => {
     const target = test_target();
     fakeMapCore.reset_calls();
@@ -72,7 +91,21 @@ test("dispatch init calls map core and posts initialized handle", () => {
     );
 
     assert.deepEqual(result, { ok: true });
-    assert.deepEqual(target.messages, [{ type: "initialized", handle: 1 }]);
+    assert.deepEqual(target.messages, [
+        {
+            type: "startup_timing",
+            event: { milestone: "constructor_start", elapsed_ms: 0 },
+        },
+        {
+            type: "startup_timing",
+            event: { milestone: "constructor_end", elapsed_ms: 0 },
+        },
+        { type: "initialized", handle: 1 },
+        {
+            type: "startup_timing",
+            event: { milestone: "initialized", elapsed_ms: 0 },
+        },
+    ]);
     assert.deepEqual(fakeMapCore.recorded_calls(), [
         {
             name: "init_map",
@@ -84,6 +117,13 @@ test("dispatch init calls map core and posts initialized handle", () => {
                     center_lat: 49.2,
                     zoom: 11,
                 },
+            },
+        },
+        {
+            name: "register_startup_events",
+            payload: {
+                handle: 1,
+                callback: fakeMapCore.recorded_calls()[1].payload.callback,
             },
         },
     ]);
@@ -133,8 +173,24 @@ test("inline bootstrap contract can rewrite bridge import and dispatch init", as
     }
 
     assert.deepEqual(target.messages, [
+        {
+            type: "startup_timing",
+            event: { milestone: "bridge_imported" },
+        },
         { type: "dom_ready" },
+        {
+            type: "startup_timing",
+            event: { milestone: "constructor_start" },
+        },
+        {
+            type: "startup_timing",
+            event: { milestone: "constructor_end" },
+        },
         { type: "initialized", handle: 1 },
+        {
+            type: "startup_timing",
+            event: { milestone: "initialized" },
+        },
     ]);
     assert.deepEqual(fakeMapCore.recorded_calls(), [
         {
@@ -142,6 +198,13 @@ test("inline bootstrap contract can rewrite bridge import and dispatch init", as
             payload: {
                 container: target.mapElement,
                 options: { style_url: "maplibre://styles/basic" },
+            },
+        },
+        {
+            name: "register_startup_events",
+            payload: {
+                handle: 1,
+                callback: fakeMapCore.recorded_calls()[1].payload.callback,
             },
         },
     ]);

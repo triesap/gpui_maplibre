@@ -243,6 +243,10 @@ export function register_on_map_events(handle, callback) {
     return 4;
 }
 
+export function register_startup_events(handle, callback) {
+    record("register_startup_events", { handle, callback });
+}
+
 export function unregister_on_map_events(handle) {
     record("unregister_on_map_events", { handle });
 }

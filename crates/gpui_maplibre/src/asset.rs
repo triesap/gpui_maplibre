@@ -169,6 +169,13 @@ pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> 
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+      window.__gpui_maplibre_boot_started_at = performance.now();
+      window.ipc?.postMessage(JSON.stringify({{
+        type: "startup_timing",
+        event: {{ milestone: "document_start", elapsed_ms: 0 }}
+      }}));
+    </script>
     {maplibre_runtime}
     <style>{crate_css}</style>
   </head>

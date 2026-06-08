@@ -43,6 +43,7 @@ const map_event_cbs = new globalThis.Map();
 const layer_event_cbs = new globalThis.Map();
 const click_handlers = new globalThis.Map();
 const load_handlers = new globalThis.Map();
+const startup_event_handlers = new globalThis.Map();
 const map_event_handlers = new globalThis.Map();
 const layer_event_handlers = new globalThis.Map();
 const layer_key_delimiter = "\u0000";
@@ -542,6 +543,19 @@ export function destroy_map(handle) {
     if (load_handler !== undefined) {
         map.off("load", load_handler);
         load_handlers.delete(handle);
+    }
+    const startup_events = startup_event_handlers.get(handle);
+    if (startup_events !== undefined) {
+        if (startup_events.load !== undefined) {
+            map.off("load", startup_events.load);
+        }
+        if (startup_events.render !== undefined) {
+            map.off("render", startup_events.render);
+        }
+        if (startup_events.idle !== undefined) {
+            map.off("idle", startup_events.idle);
+        }
+        startup_event_handlers.delete(handle);
     }
     const map_events = map_event_handlers.get(handle);
     if (map_events !== undefined) {
@@ -1348,6 +1362,67 @@ export function unregister_on_load(handle) {
         load_handlers.delete(handle);
     }
     load_cbs.delete(handle);
+}
+export function register_startup_events(handle, cb) {
+    const map = get_map(handle);
+    if (map === undefined || typeof cb !== "function") {
+        return;
+    }
+    const previous = startup_event_handlers.get(handle);
+    if (previous !== undefined) {
+        map.off("load", previous.load);
+        map.off("render", previous.render);
+        map.off("idle", previous.idle);
+        startup_event_handlers.delete(handle);
+    }
+    const cleanup = (event_name) => {
+        const handlers = startup_event_handlers.get(handle);
+        if (handlers === undefined) {
+            return;
+        }
+        if (handlers[event_name] !== undefined) {
+            map.off(event_name, handlers[event_name]);
+        }
+        if (event_name === "load") {
+            handlers.load = undefined;
+        }
+        if (event_name === "render") {
+            handlers.render = undefined;
+        }
+        if (event_name === "idle") {
+            handlers.idle = undefined;
+        }
+        if (
+            handlers.load === undefined &&
+            handlers.render === undefined &&
+            handlers.idle === undefined
+        ) {
+            startup_event_handlers.delete(handle);
+        }
+    };
+    const handlers = {
+        load: () => {
+            cb("load");
+            cleanup("load");
+        },
+        render: () => {
+            cb("first_render");
+            cleanup("render");
+        },
+        idle: () => {
+            cb("idle");
+            cleanup("idle");
+        },
+    };
+    startup_event_handlers.set(handle, handlers);
+    if (map.isStyleLoaded()) {
+        queueMicrotask(() => handlers.load?.());
+    }
+    else {
+        map.on("load", handlers.load);
+    }
+    map.on("render", handlers.render);
+    map.on("idle", handlers.idle);
 }
 export function register_on_map_events(handle, cb) {
     const map = get_map(handle);

@@ -69,6 +69,13 @@ pub struct MapEvent {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StartupTimingEvent {
+    pub milestone: String,
+    #[serde(default)]
+    pub elapsed_ms: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FeatureHit {
     pub layer_id: String,
     pub properties: serde_json::Value,
@@ -124,6 +131,9 @@ pub enum MapLibreEvent {
     Ready {
         handle: MapHandle,
     },
+    StartupTiming {
+        event: StartupTimingEvent,
+    },
     Click {
         lng: f64,
         lat: f64,
@@ -174,6 +184,7 @@ impl MapLibreEvent {
             Self::DomReady
             | Self::Initialized { .. }
             | Self::Ready { .. }
+            | Self::StartupTiming { .. }
             | Self::Click { .. }
             | Self::Map { .. }
             | Self::Layer { .. }
@@ -188,6 +199,7 @@ impl MapLibreEvent {
             Self::Initialized { handle } | Self::Ready { handle } => Some(*handle),
             Self::Map { handle, .. } | Self::Layer { handle, .. } => Some(*handle),
             Self::DomReady
+            | Self::StartupTiming { .. }
             | Self::Click { .. }
             | Self::NativeControlCreated { .. }
             | Self::MarkerCreated { .. }
@@ -347,6 +359,24 @@ mod events_tests {
             event,
             MapLibreEvent::Initialized {
                 handle: MapHandle(1),
+            }
+        );
+
+        let event = serde_json::from_value::<MapLibreEvent>(json!({
+            "type": "startup_timing",
+            "event": {
+                "milestone": "bridge_imported",
+                "elapsed_ms": 2.5
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            event,
+            MapLibreEvent::StartupTiming {
+                event: StartupTimingEvent {
+                    milestone: "bridge_imported".to_owned(),
+                    elapsed_ms: Some(2.5),
+                },
             }
         );
 

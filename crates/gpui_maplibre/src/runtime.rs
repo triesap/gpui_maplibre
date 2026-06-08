@@ -111,6 +111,7 @@ impl RuntimeCommandQueue {
                 self.drain_dispatchable_commands()
             }
             MapLibreEvent::Error { .. }
+            | MapLibreEvent::StartupTiming { .. }
             | MapLibreEvent::Click { .. }
             | MapLibreEvent::Map { .. }
             | MapLibreEvent::Layer { .. }
@@ -208,6 +209,7 @@ impl ViewLifecycle {
                 self.cleanup_emitted = false;
             }
             MapLibreEvent::DomReady
+            | MapLibreEvent::StartupTiming { .. }
             | MapLibreEvent::Error { .. }
             | MapLibreEvent::Click { .. }
             | MapLibreEvent::Map { .. }
@@ -317,6 +319,7 @@ impl EventSubscriptionRegistry {
             MapLibreEvent::DomReady
             | MapLibreEvent::Initialized { .. }
             | MapLibreEvent::Ready { .. }
+            | MapLibreEvent::StartupTiming { .. }
             | MapLibreEvent::Click { .. }
             | MapLibreEvent::NativeControlCreated { .. }
             | MapLibreEvent::MarkerCreated { .. }
@@ -1032,5 +1035,27 @@ mod tests {
         );
         assert_eq!(router.ready_handle(), Some(MapHandle(1)));
         assert!(router.is_map_ready());
+    }
+
+    #[test]
+    fn runtime_routes_startup_timing_as_emitted_event() {
+        let mut router = EventRouter::new();
+
+        let action = route_ipc_message(
+            &mut router,
+            r#"{"type":"startup_timing","event":{"milestone":"first_render","elapsed_ms":12.5}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            action,
+            EventRouterAction::Emit(MapLibreEvent::StartupTiming {
+                event: crate::StartupTimingEvent {
+                    milestone: "first_render".to_owned(),
+                    elapsed_ms: Some(12.5),
+                },
+            })
+        );
+        assert!(!router.is_map_ready());
     }
 }

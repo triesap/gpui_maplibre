@@ -50,7 +50,26 @@ function clock_now(target) {
     if (typeof target?.now === "function") {
         return target.now();
     }
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+        return performance.now();
+    }
     return Date.now();
+}
+
+function boot_started_at(target) {
+    if (typeof target?.__gpui_maplibre_boot_started_at === "number") {
+        return target.__gpui_maplibre_boot_started_at;
+    }
+    return undefined;
+}
+
+function elapsed_since_boot(target) {
+    const started_at = boot_started_at(target);
+    if (started_at === undefined) {
+        return undefined;
+    }
+
+    return Math.max(0, clock_now(target) - started_at);
 }
 
 function throttle(callback, throttle_ms, target) {
@@ -98,6 +117,41 @@ export function post_dom_ready(target = default_target()) {
     return post({ type: "dom_ready" }, target);
 }
 
+function can_post_to_target(target) {
+    if (typeof window !== "undefined" && target === window && window.ipc?.postMessage) {
+        return true;
+    }
+    return target?.ipc?.postMessage !== undefined;
+}
+
+export function post_startup_timing(milestone, target = default_target()) {
+    if (!can_post_to_target(target)) {
+        return undefined;
+    }
+
+    const elapsed_ms = elapsed_since_boot(target);
+    return post(
+        {
+            type: "startup_timing",
+            event: {
+                milestone,
+                ...(elapsed_ms === undefined ? {} : { elapsed_ms }),
+            },
+        },
+        target,
+    );
+}
+
+function register_startup_timing(handle, target) {
+    if (typeof mapCore.register_startup_events !== "function") {
+        return;
+    }
+
+    mapCore.register_startup_events(handle, (milestone) => {
+        post_startup_timing(milestone, target);
+    });
+}
+
 export function dispatch(command, target = default_target()) {
     try {
         if (command === undefined || command === null || typeof command.type !== "string") {
@@ -110,8 +164,12 @@ export function dispatch(command, target = default_target()) {
         }
 
         if (command.type === "init") {
+            post_startup_timing("constructor_start", target);
             const handle = mapCore.init_map(require_map_container(target), command.options ?? {});
+            post_startup_timing("constructor_end", target);
             post({ type: "initialized", handle }, target);
+            post_startup_timing("initialized", target);
+            register_startup_timing(handle, target);
             return { ok: true };
         }
 
@@ -542,6 +600,8 @@ export function install_bridge(target = default_target()) {
 }
 
 const installed_bridge = install_bridge();
+
+post_startup_timing("bridge_imported", default_target());
 
 if (typeof document !== "undefined") {
     if (document.readyState === "loading") {
