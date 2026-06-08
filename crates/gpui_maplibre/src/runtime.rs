@@ -1004,4 +1004,33 @@ mod tests {
                 .starts_with("failed to parse MapLibre event:")
         );
     }
+
+    #[test]
+    fn runtime_keeps_initialized_separate_from_ready() {
+        let mut router = EventRouter::new();
+
+        let initialized =
+            route_ipc_message(&mut router, r#"{"type":"initialized","handle":1}"#).unwrap();
+
+        assert_eq!(
+            initialized,
+            EventRouterAction::Initialized {
+                handle: MapHandle(1),
+            }
+        );
+        assert_eq!(router.initialized_handle(), Some(MapHandle(1)));
+        assert_eq!(router.map_handle(), Some(MapHandle(1)));
+        assert!(!router.is_map_ready());
+
+        let ready = route_ipc_message(&mut router, r#"{"type":"ready","handle":1}"#).unwrap();
+
+        assert_eq!(
+            ready,
+            EventRouterAction::Ready {
+                handle: MapHandle(1),
+            }
+        );
+        assert_eq!(router.ready_handle(), Some(MapHandle(1)));
+        assert!(router.is_map_ready());
+    }
 }
