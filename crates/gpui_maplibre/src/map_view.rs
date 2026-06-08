@@ -316,6 +316,22 @@ impl<T> MapLibreView<T> {
     }
 }
 
+impl<T: 'static> MapLibreView<T> {
+    pub fn dispatch_mounted_command(
+        &mut self,
+        command: MapCommand,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        let Some(webview) = self.webview.clone() else {
+            return Err(MapLibreError::not_ready("mounted WebView is not attached"));
+        };
+        let script = crate::script::script_for_command(&command)?;
+
+        cx.update_entity(&webview, |webview, _| webview.evaluate_script(&script))
+            .map_err(|error| MapLibreError::platform(error.to_string()))
+    }
+}
+
 impl<T: CommandTransport> MapLibreView<T> {
     pub fn resize(&mut self) -> Result<bool> {
         self.controller.resize_if_initialized()
