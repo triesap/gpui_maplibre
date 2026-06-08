@@ -2,9 +2,15 @@ const INDEX_HTML_TEMPLATE: &str = include_str!("../assets/index.html");
 const BRIDGE_JS: &str = include_str!("../assets/bridge.js");
 const GPUI_MAPLIBRE_CSS: &str = include_str!("../assets/gpui_maplibre.css");
 const MAP_CORE_JS: &str = include_str!("../assets/map_core.js");
+#[cfg(feature = "vendored-maplibre")]
+const VENDORED_MAPLIBRE_JS: &str = include_str!("../assets/vendor/maplibre-gl.js");
+#[cfg(feature = "vendored-maplibre")]
+const VENDORED_MAPLIBRE_CSS: &str = include_str!("../assets/vendor/maplibre-gl.css");
 const DEFAULT_CDN_VERSION: &str = "5.13.0";
 
-use crate::{MapInitOptions, MapLibreError, Result};
+#[cfg(not(feature = "vendored-maplibre"))]
+use crate::MapLibreError;
+use crate::{MapInitOptions, Result};
 use serde::Serialize;
 use std::borrow::Cow;
 
@@ -175,6 +181,15 @@ pub fn inline_webview_html(asset_mode: &AssetMode, options: &MapInitOptions) -> 
     ))
 }
 
+#[cfg(feature = "vendored-maplibre")]
+fn vendored_runtime_assets() -> Result<RuntimeAssets<'static>> {
+    Ok(RuntimeAssets::Inline {
+        js: Cow::Borrowed(VENDORED_MAPLIBRE_JS),
+        css: Cow::Borrowed(VENDORED_MAPLIBRE_CSS),
+    })
+}
+
+#[cfg(not(feature = "vendored-maplibre"))]
 fn vendored_runtime_assets() -> Result<RuntimeAssets<'static>> {
     Err(MapLibreError::asset(
         "vendored MapLibre GL assets require the vendored-maplibre feature",
@@ -293,6 +308,7 @@ mod tests {
         assert!(!html.contains(r#"href="./gpui_maplibre.css""#));
     }
 
+    #[cfg(not(feature = "vendored-maplibre"))]
     #[test]
     fn maplibre_assets_exposes_vendored_runtime_api() {
         let vendored = MapLibreAssets::vendored();
@@ -302,6 +318,19 @@ mod tests {
             error.to_string(),
             "MapLibre asset loading failed: vendored MapLibre GL assets require the vendored-maplibre feature"
         );
+    }
+
+    #[cfg(feature = "vendored-maplibre")]
+    #[test]
+    fn vendored_runtime_assets_embed_pinned_maplibre_runtime() {
+        let html =
+            inline_webview_html(&MapLibreAssets::vendored(), &MapInitOptions::default()).unwrap();
+
+        assert!(html.contains("data-gpui-maplibre-runtime-js"));
+        assert!(html.contains("data-gpui-maplibre-runtime-css"));
+        assert!(html.contains("maplibregl"));
+        assert!(!html.contains("https://unpkg.com"));
+        assert!(!html.contains(r#"<script src="inline://maplibre-gl.js""#));
     }
 
     #[test]
