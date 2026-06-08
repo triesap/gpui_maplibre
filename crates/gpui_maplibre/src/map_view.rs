@@ -16,6 +16,11 @@ use std::rc::Rc;
 
 type MountedIpcInbox = Rc<RefCell<VecDeque<String>>>;
 
+/// Create a GPUI entity that owns a MapLibre WebView.
+///
+/// This is the happy path for applications: provide a map config, then render the returned
+/// `Entity<MapLibreView>` inside the parent view. The crate owns the inline WebView HTML,
+/// Wry child creation, `gpui_wry` wrapping, and IPC routing.
 pub fn create_map_view<T: 'static>(
     config: MapLibreViewConfig,
     window: &mut Window,
@@ -52,9 +57,12 @@ fn build_wry_webview(
         .map_err(|error| MapLibreError::platform(error.to_string()))
 }
 
+/// Configuration for a mounted MapLibre view.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapLibreViewConfig {
+    /// Initial MapLibre options dispatched when the WebView bootstraps.
     pub options: MapInitOptions,
+    /// Source for MapLibre GL JS and CSS assets.
     pub asset_mode: AssetMode,
 }
 
@@ -68,6 +76,7 @@ impl Default for MapLibreViewConfig {
 }
 
 impl MapLibreViewConfig {
+    /// Create a config with the default asset mode.
     pub fn new(options: MapInitOptions) -> Self {
         Self {
             options,
@@ -75,15 +84,18 @@ impl MapLibreViewConfig {
         }
     }
 
+    /// Override the MapLibre GL JS and CSS asset source.
     pub fn with_asset_mode(mut self, asset_mode: AssetMode) -> Self {
         self.asset_mode = asset_mode;
         self
     }
 
+    /// Build the private file-backed HTML used by low-level integrations.
     pub fn private_html(&self) -> String {
         private_index_html(&self.asset_mode)
     }
 
+    /// Build inline HTML suitable for `wry::WebViewBuilder::with_html`.
     pub fn inline_webview_html(&self) -> Result<String> {
         inline_webview_html(&self.asset_mode, &self.options)
     }
@@ -144,6 +156,10 @@ pub fn handle_webview_ipc(
     route_ipc_message(router, message)
 }
 
+/// GPUI-renderable MapLibre view state.
+///
+/// Applications normally construct this with [`create_map_view`]. The lower-level constructors and
+/// `set_webview` method remain available for custom WebView lifecycle integrations.
 pub struct MapLibreView<T = FakeTransport> {
     config: MapLibreViewConfig,
     controller: MapController<T>,
@@ -207,18 +223,22 @@ impl<T> MapLibreView<T> {
         &mut self.lifecycle
     }
 
+    /// Return true once the WebView bridge has emitted `dom_ready`.
     pub fn is_dom_ready(&self) -> bool {
         self.router.is_dom_ready()
     }
 
+    /// Return true once MapLibre has emitted its ready event.
     pub fn is_map_ready(&self) -> bool {
         self.router.is_map_ready()
     }
 
+    /// Return the current MapLibre handle after initialization.
     pub fn map_handle(&self) -> Option<MapHandle> {
         self.router.map_handle()
     }
 
+    /// Return structured bridge errors routed from JavaScript.
     pub fn routed_errors(&self) -> &[RoutedError] {
         self.router.errors()
     }
@@ -334,6 +354,7 @@ impl<T> MapLibreView<T> {
 }
 
 impl<T: 'static> MapLibreView<T> {
+    /// Dispatch a command through the hosted WebView bridge.
     pub fn dispatch_mounted_command(
         &mut self,
         command: MapCommand,
@@ -348,6 +369,7 @@ impl<T: 'static> MapLibreView<T> {
             .map_err(|error| MapLibreError::platform(error.to_string()))
     }
 
+    /// Resize the hosted WebView map if a map handle has been initialized.
     pub fn resize_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
         let Some(handle) = self.map_handle() else {
             return Ok(false);
@@ -357,6 +379,7 @@ impl<T: 'static> MapLibreView<T> {
         Ok(true)
     }
 
+    /// Destroy the hosted WebView map if a map handle has been initialized.
     pub fn cleanup_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
         let Some(handle) = self.map_handle() else {
             return Ok(false);
