@@ -575,6 +575,21 @@ mod tests {
 
     #[cfg(feature = "vendored-maplibre")]
     #[test]
+    fn vendored_protocol_index_avoids_inline_runtime_payload() {
+        let options = MapInitOptions::default();
+        let protocol_html = protocol_index_html(&MapLibreAssets::vendored(), &options).unwrap();
+        let inline_html =
+            inline_webview_html(&MapLibreAssets::vendored(), &options).expect("inline html");
+
+        assert!(inline_html.len() > protocol_html.len() * 100);
+        assert!(inline_html.contains("maplibregl"));
+        assert!(!protocol_html.contains("maplibregl"));
+        assert!(protocol_html.contains("vendor/maplibre-gl.js"));
+        assert!(protocol_html.contains("vendor/maplibre-gl.css"));
+    }
+
+    #[cfg(feature = "vendored-maplibre")]
+    #[test]
     fn vendored_protocol_asset_response_serves_pinned_runtime() {
         let options = MapInitOptions::default();
         let js = protocol_asset_response(
