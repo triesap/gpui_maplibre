@@ -29,12 +29,36 @@ pub fn create_map_view<T: 'static>(
     window: &mut Window,
     cx: &mut Context<T>,
 ) -> Result<Entity<MapLibreView>> {
+    create_map_view_with_visibility(config, true, window, cx)
+}
+
+/// Create a hidden mounted map that can warm up before it is shown.
+///
+/// Use [`MapLibreView::show_mounted`] when the app is ready to present the map route.
+pub fn create_prewarmed_map_view<T: 'static>(
+    config: MapLibreViewConfig,
+    window: &mut Window,
+    cx: &mut Context<T>,
+) -> Result<Entity<MapLibreView>> {
+    create_map_view_with_visibility(config, false, window, cx)
+}
+
+fn create_map_view_with_visibility<T: 'static>(
+    config: MapLibreViewConfig,
+    visible: bool,
+    window: &mut Window,
+    cx: &mut Context<T>,
+) -> Result<Entity<MapLibreView>> {
     let ipc_inbox = mounted_ipc_inbox();
-    let webview = build_wry_webview(&config, ipc_inbox.clone(), window)?;
+    let webview = build_wry_webview(&config, ipc_inbox.clone(), visible, window)?;
     let webview = cx.new(|cx| gpui_wry::WebView::new(webview, window, cx));
+    if !visible {
+        cx.update_entity(&webview, |webview, _| webview.hide());
+    }
 
     Ok(cx.new(|_| {
         let mut map_view = MapLibreView::new(config);
+        map_view.set_mounted_visibility_state(visible);
         map_view.set_mounted_webview(webview, ipc_inbox);
         map_view
     }))
@@ -47,11 +71,13 @@ fn mounted_ipc_inbox() -> MountedIpcInbox {
 fn build_wry_webview(
     config: &MapLibreViewConfig,
     ipc_inbox: MountedIpcInbox,
+    visible: bool,
     window: &mut Window,
 ) -> Result<wry::WebView> {
     let html = config.inline_webview_html()?;
 
     wry::WebViewBuilder::new()
+        .with_visible(visible)
         .with_html(html)
         .with_ipc_handler(move |request| {
             ipc_inbox.borrow_mut().push_back(request.body().clone());
