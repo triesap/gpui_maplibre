@@ -5,8 +5,51 @@ use crate::runtime::{
 use crate::subscription::{EventSubscription, EventSubscriptionTarget};
 use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapInitOptions};
 use crate::{MapCommand, MapLibreError, MapLibreEvent, Result};
-use gpui::{Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div};
+use gpui::{
+    AppContext, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div,
+};
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::rc::Rc;
+
+type MountedIpcInbox = Rc<RefCell<VecDeque<String>>>;
+
+pub fn create_map_view<T: 'static>(
+    config: MapLibreViewConfig,
+    window: &mut Window,
+    cx: &mut Context<T>,
+) -> Result<Entity<MapLibreView>> {
+    let ipc_inbox = mounted_ipc_inbox();
+    let webview = build_wry_webview(&config, ipc_inbox.clone(), window)?;
+    let webview = cx.new(|cx| gpui_wry::WebView::new(webview, window, cx));
+
+    Ok(cx.new(|_| {
+        let mut map_view = MapLibreView::new(config);
+        map_view.set_mounted_webview(webview, ipc_inbox);
+        map_view
+    }))
+}
+
+fn mounted_ipc_inbox() -> MountedIpcInbox {
+    Rc::new(RefCell::new(VecDeque::new()))
+}
+
+fn build_wry_webview(
+    config: &MapLibreViewConfig,
+    ipc_inbox: MountedIpcInbox,
+    window: &mut Window,
+) -> Result<wry::WebView> {
+    let html = config.inline_webview_html()?;
+
+    wry::WebViewBuilder::new()
+        .with_html(html)
+        .with_ipc_handler(move |request| {
+            ipc_inbox.borrow_mut().push_back(request.body().clone());
+        })
+        .build_as_child(window)
+        .map_err(|error| MapLibreError::platform(error.to_string()))
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapLibreViewConfig {
@@ -107,6 +150,7 @@ pub struct MapLibreView<T = FakeTransport> {
     lifecycle: ViewLifecycle,
     subscriptions: EventSubscriptionRegistry,
     webview: Option<Entity<gpui_wry::WebView>>,
+    ipc_inbox: Option<MountedIpcInbox>,
     last_ipc_error: Option<String>,
 }
 
@@ -129,6 +173,7 @@ impl<T> MapLibreView<T> {
             lifecycle: ViewLifecycle::new(),
             subscriptions: EventSubscriptionRegistry::new(),
             webview: None,
+            ipc_inbox: None,
             last_ipc_error: None,
         }
     }
@@ -193,9 +238,20 @@ impl<T> MapLibreView<T> {
 
     pub fn set_webview(&mut self, webview: Entity<gpui_wry::WebView>) {
         self.webview = Some(webview);
+        self.ipc_inbox = None;
+    }
+
+    fn set_mounted_webview(
+        &mut self,
+        webview: Entity<gpui_wry::WebView>,
+        ipc_inbox: MountedIpcInbox,
+    ) {
+        self.webview = Some(webview);
+        self.ipc_inbox = Some(ipc_inbox);
     }
 
     pub fn take_webview(&mut self) -> Option<Entity<gpui_wry::WebView>> {
+        self.ipc_inbox = None;
         self.webview.take()
     }
 
