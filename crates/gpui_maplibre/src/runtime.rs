@@ -123,6 +123,29 @@ impl RuntimeCommandQueue {
         }
     }
 
+    pub fn reduce_action(&mut self, action: &EventRouterAction) -> Vec<MapCommand> {
+        match action {
+            EventRouterAction::DomReady => {
+                self.dom_ready = true;
+                self.drain_dispatchable_commands()
+            }
+            EventRouterAction::Initialized { handle } => {
+                self.initialized_handle = Some(*handle);
+                Vec::new()
+            }
+            EventRouterAction::Ready { handle } => {
+                self.initialized_handle.get_or_insert(*handle);
+                self.ready_handle = Some(*handle);
+                self.drain_dispatchable_commands()
+            }
+            EventRouterAction::NativeControlCreated { .. }
+            | EventRouterAction::MarkerCreated { .. }
+            | EventRouterAction::PopupCreated { .. }
+            | EventRouterAction::Emit(_)
+            | EventRouterAction::Error(_) => Vec::new(),
+        }
+    }
+
     fn can_dispatch(&self, command: &MapCommand) -> bool {
         match command {
             MapCommand::Init { .. } => self.dom_ready,
@@ -791,6 +814,32 @@ mod tests {
         assert!(queue.is_map_ready());
         assert_eq!(queue.ready_handle(), Some(MapHandle(1)));
         assert_eq!(dispatch, vec![resize_command()]);
+        assert_eq!(queue.pending_len(), 0);
+    }
+
+    #[test]
+    fn runtime_ready_queue_can_reduce_router_actions() {
+        let mut queue = RuntimeCommandQueue::new();
+
+        assert_eq!(
+            queue.submit_command(resize_command()),
+            RuntimeCommandAction::Queued
+        );
+        assert_eq!(
+            queue.reduce_action(&EventRouterAction::Initialized {
+                handle: MapHandle(1),
+            }),
+            Vec::<MapCommand>::new()
+        );
+        assert_eq!(queue.initialized_handle(), Some(MapHandle(1)));
+        assert_eq!(queue.pending_len(), 1);
+
+        let dispatch = queue.reduce_action(&EventRouterAction::Ready {
+            handle: MapHandle(1),
+        });
+
+        assert_eq!(dispatch, vec![resize_command()]);
+        assert_eq!(queue.ready_handle(), Some(MapHandle(1)));
         assert_eq!(queue.pending_len(), 0);
     }
 

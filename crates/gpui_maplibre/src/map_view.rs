@@ -1,7 +1,7 @@
 use crate::asset::{inline_webview_html, private_index_html};
 use crate::runtime::{
-    EventRouter, EventRouterAction, EventSubscriptionRegistry, RoutedError, ViewLifecycle,
-    route_ipc_message,
+    EventRouter, EventRouterAction, EventSubscriptionRegistry, RoutedError, RuntimeCommandAction,
+    RuntimeCommandQueue, ViewLifecycle, route_ipc_message,
 };
 use crate::subscription::{EventSubscription, EventSubscriptionTarget};
 use crate::{
@@ -184,6 +184,8 @@ pub struct MapLibreView<T = FakeTransport> {
     router: EventRouter,
     lifecycle: ViewLifecycle,
     subscriptions: EventSubscriptionRegistry,
+    mounted_command_queue: RuntimeCommandQueue,
+    mounted_dispatch_queue: VecDeque<MapCommand>,
     webview: Option<Entity<gpui_wry::WebView>>,
     ipc_inbox: Option<MountedIpcInbox>,
     last_ipc_error: Option<String>,
@@ -207,6 +209,8 @@ impl<T> MapLibreView<T> {
             router: EventRouter::new(),
             lifecycle: ViewLifecycle::new(),
             subscriptions: EventSubscriptionRegistry::new(),
+            mounted_command_queue: RuntimeCommandQueue::new(),
+            mounted_dispatch_queue: VecDeque::new(),
             webview: None,
             ipc_inbox: None,
             last_ipc_error: None,
@@ -267,6 +271,10 @@ impl<T> MapLibreView<T> {
 
     pub fn subscription_registry_mut(&mut self) -> &mut EventSubscriptionRegistry {
         &mut self.subscriptions
+    }
+
+    pub fn pending_mounted_command_len(&self) -> usize {
+        self.mounted_command_queue.pending_len()
     }
 
     pub fn track_subscription(
@@ -356,6 +364,8 @@ impl<T> MapLibreView<T> {
 
     fn sync_runtime_state(&mut self, action: &EventRouterAction) {
         self.lifecycle.reduce_action(action);
+        self.mounted_dispatch_queue
+            .extend(self.mounted_command_queue.reduce_action(action));
 
         match action {
             EventRouterAction::Initialized { handle } | EventRouterAction::Ready { handle } => {
@@ -369,6 +379,10 @@ impl<T> MapLibreView<T> {
             | EventRouterAction::Error(_) => {}
         }
     }
+
+    fn submit_mounted_command(&mut self, command: MapCommand) -> RuntimeCommandAction {
+        self.mounted_command_queue.submit_command(command)
+    }
 }
 
 impl<T: 'static> MapLibreView<T> {
@@ -381,10 +395,42 @@ impl<T: 'static> MapLibreView<T> {
         let Some(webview) = self.webview.clone() else {
             return Err(MapLibreError::not_ready("mounted WebView is not attached"));
         };
-        let script = crate::script::script_for_command(&command)?;
+
+        let RuntimeCommandAction::Dispatch(command) = self.submit_mounted_command(command) else {
+            return Ok(());
+        };
+
+        self.evaluate_mounted_command(&webview, &command, cx)
+    }
+
+    fn evaluate_mounted_command(
+        &mut self,
+        webview: &Entity<gpui_wry::WebView>,
+        command: &MapCommand,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        let script = crate::script::script_for_command(command)?;
 
         cx.update_entity(&webview, |webview, _| webview.evaluate_script(&script))
             .map_err(|error| MapLibreError::platform(error.to_string()))
+    }
+
+    fn flush_mounted_dispatch_queue(&mut self, cx: &mut Context<Self>) -> Result<usize> {
+        if self.mounted_dispatch_queue.is_empty() {
+            return Ok(0);
+        }
+
+        let Some(webview) = self.webview.clone() else {
+            return Err(MapLibreError::not_ready("mounted WebView is not attached"));
+        };
+
+        let mut flushed = 0;
+        while let Some(command) = self.mounted_dispatch_queue.pop_front() {
+            self.evaluate_mounted_command(&webview, &command, cx)?;
+            flushed += 1;
+        }
+
+        Ok(flushed)
     }
 
     /// Resize the hosted WebView map if a map handle has been initialized.
@@ -440,7 +486,16 @@ impl<T: CommandTransport> MapLibreView<T> {
 
 impl<T: CommandTransport + 'static> Render for MapLibreView<T> {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.drain_mounted_ipc_messages().is_empty() {
+        let did_drain = !self.drain_mounted_ipc_messages().is_empty();
+        let did_flush = match self.flush_mounted_dispatch_queue(cx) {
+            Ok(flushed) => flushed > 0,
+            Err(error) => {
+                self.last_ipc_error = Some(error.to_string());
+                false
+            }
+        };
+
+        if did_drain || did_flush {
             cx.notify();
         }
 
@@ -602,6 +657,33 @@ mod tests {
         assert!(view.is_map_ready());
         assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
+    }
+
+    #[test]
+    fn mounted_command_queue_drains_after_ready_ipc() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+        let command = MapCommand::Resize {
+            handle: MapHandle(7),
+        };
+
+        assert_eq!(
+            view.submit_mounted_command(command.clone()),
+            RuntimeCommandAction::Queued
+        );
+        assert_eq!(view.pending_mounted_command_len(), 1);
+        assert!(view.mounted_dispatch_queue.is_empty());
+
+        view.handle_ipc_message(r#"{"type":"initialized","handle":7}"#)
+            .unwrap();
+
+        assert_eq!(view.pending_mounted_command_len(), 1);
+        assert!(view.mounted_dispatch_queue.is_empty());
+
+        view.handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+
+        assert_eq!(view.pending_mounted_command_len(), 0);
+        assert_eq!(view.mounted_dispatch_queue, VecDeque::from([command]));
     }
 
     #[test]
