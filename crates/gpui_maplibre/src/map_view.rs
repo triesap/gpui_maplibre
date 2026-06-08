@@ -1,9 +1,10 @@
 use crate::asset::{inline_webview_html, private_index_html};
 use crate::runtime::{
-    EventRouter, EventRouterAction, EventSubscriptionRegistry, ViewLifecycle, route_ipc_message,
+    EventRouter, EventRouterAction, EventSubscriptionRegistry, RoutedError, ViewLifecycle,
+    route_ipc_message,
 };
 use crate::subscription::{EventSubscription, EventSubscriptionTarget};
-use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapInitOptions};
+use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapHandle, MapInitOptions};
 use crate::{MapCommand, MapLibreError, MapLibreEvent, Result};
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div,
@@ -204,6 +205,22 @@ impl<T> MapLibreView<T> {
 
     pub fn lifecycle_mut(&mut self) -> &mut ViewLifecycle {
         &mut self.lifecycle
+    }
+
+    pub fn is_dom_ready(&self) -> bool {
+        self.router.is_dom_ready()
+    }
+
+    pub fn is_map_ready(&self) -> bool {
+        self.router.is_map_ready()
+    }
+
+    pub fn map_handle(&self) -> Option<MapHandle> {
+        self.router.map_handle()
+    }
+
+    pub fn routed_errors(&self) -> &[RoutedError] {
+        self.router.errors()
     }
 
     pub fn subscription_registry(&self) -> &EventSubscriptionRegistry {
@@ -446,6 +463,27 @@ mod tests {
         assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
         assert!(view.last_ipc_error().is_none());
+    }
+
+    #[test]
+    fn map_view_exposes_typed_event_state() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+
+        assert!(!view.is_dom_ready());
+        assert!(!view.is_map_ready());
+        assert_eq!(view.map_handle(), None);
+
+        view.handle_ipc_message(r#"{"type":"dom_ready"}"#).unwrap();
+        view.handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+        view.handle_ipc_message(r#"{"type":"error","context":"dispatch","message":"bad command"}"#)
+            .unwrap();
+
+        assert!(view.is_dom_ready());
+        assert!(view.is_map_ready());
+        assert_eq!(view.map_handle(), Some(MapHandle(7)));
+        assert_eq!(view.routed_errors().len(), 1);
+        assert_eq!(view.routed_errors()[0].context, "dispatch");
     }
 
     #[test]
