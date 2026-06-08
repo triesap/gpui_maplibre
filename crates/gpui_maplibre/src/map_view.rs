@@ -1,4 +1,4 @@
-use crate::asset::private_index_html;
+use crate::asset::{inline_webview_html, private_index_html};
 use crate::runtime::{
     EventRouter, EventRouterAction, EventSubscriptionRegistry, ViewLifecycle, route_ipc_message,
 };
@@ -38,6 +38,10 @@ impl MapLibreViewConfig {
 
     pub fn private_html(&self) -> String {
         private_index_html(&self.asset_mode)
+    }
+
+    pub fn inline_webview_html(&self) -> Result<String> {
+        inline_webview_html(&self.asset_mode, &self.options)
     }
 }
 
@@ -301,6 +305,16 @@ mod tests {
         assert_eq!(stub.config().asset_mode, AssetMode::VendoredPlaceholder);
         assert!(stub.config().private_html().contains(r#"id="map""#));
         assert!(stub.config().private_html().contains(r#"./bridge.js"#));
+    }
+
+    #[test]
+    fn map_view_config_builds_inline_webview_html() {
+        let config = MapLibreViewConfig::new(MapInitOptions::default().with_zoom(4.0));
+        let html = config.inline_webview_html().unwrap();
+
+        assert!(html.contains("bridge.installed_bridge.dispatch"));
+        assert!(html.contains("\"zoom\":4.0"));
+        assert!(!html.contains(r#"src="./bridge.js""#));
     }
 
     #[test]
