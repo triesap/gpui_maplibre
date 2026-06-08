@@ -287,6 +287,18 @@ impl<T> MapLibreView<T> {
         }
     }
 
+    fn drain_mounted_ipc_messages(&mut self) -> Vec<Result<EventRouterAction>> {
+        let Some(ipc_inbox) = self.ipc_inbox.clone() else {
+            return Vec::new();
+        };
+        let messages = ipc_inbox.borrow_mut().drain(..).collect::<Vec<_>>();
+
+        messages
+            .iter()
+            .map(|message| self.handle_ipc_message(message))
+            .collect()
+    }
+
     fn sync_runtime_state(&mut self, action: &EventRouterAction) {
         self.lifecycle.reduce_action(action);
 
@@ -333,7 +345,11 @@ impl<T: CommandTransport> MapLibreView<T> {
 }
 
 impl<T: CommandTransport + 'static> Render for MapLibreView<T> {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.drain_mounted_ipc_messages().is_empty() {
+            cx.notify();
+        }
+
         let mut container = div().size_full();
 
         if let Some(webview) = self.webview.as_ref() {
@@ -414,6 +430,33 @@ mod tests {
         assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
         assert!(view.last_ipc_error().is_none());
+    }
+
+    #[test]
+    fn mounted_ipc_inbox_routes_messages_into_view_state() {
+        let ipc_inbox = mounted_ipc_inbox();
+        ipc_inbox
+            .borrow_mut()
+            .push_back(r#"{"type":"dom_ready"}"#.to_owned());
+        ipc_inbox
+            .borrow_mut()
+            .push_back(r#"{"type":"ready","handle":7}"#.to_owned());
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+        view.ipc_inbox = Some(ipc_inbox);
+
+        let actions = view.drain_mounted_ipc_messages();
+
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].as_ref().unwrap(), &EventRouterAction::DomReady);
+        assert_eq!(
+            actions[1].as_ref().unwrap(),
+            &EventRouterAction::Ready {
+                handle: MapHandle(7),
+            }
+        );
+        assert!(view.router().is_dom_ready());
+        assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
+        assert_eq!(view.controller().handle(), Some(MapHandle(7)));
     }
 
     #[test]
