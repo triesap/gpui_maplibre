@@ -528,7 +528,20 @@ mod tests {
         assert_eq!(view.router().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
+        assert!(!view.is_map_ready());
         assert!(view.last_ipc_error().is_none());
+
+        let action = view
+            .handle_ipc_message(r#"{"type":"ready","handle":7}"#)
+            .unwrap();
+
+        assert_eq!(
+            action,
+            EventRouterAction::Ready {
+                handle: MapHandle(7),
+            }
+        );
+        assert!(view.is_map_ready());
     }
 
     #[test]
@@ -560,21 +573,33 @@ mod tests {
             .push_back(r#"{"type":"dom_ready"}"#.to_owned());
         ipc_inbox
             .borrow_mut()
+            .push_back(r#"{"type":"initialized","handle":7}"#.to_owned());
+        ipc_inbox
+            .borrow_mut()
             .push_back(r#"{"type":"ready","handle":7}"#.to_owned());
         let mut view = MapLibreView::new(MapLibreViewConfig::default());
         view.ipc_inbox = Some(ipc_inbox);
 
         let actions = view.drain_mounted_ipc_messages();
 
-        assert_eq!(actions.len(), 2);
+        assert_eq!(actions.len(), 3);
         assert_eq!(actions[0].as_ref().unwrap(), &EventRouterAction::DomReady);
         assert_eq!(
             actions[1].as_ref().unwrap(),
+            &EventRouterAction::Initialized {
+                handle: MapHandle(7),
+            }
+        );
+        assert_eq!(
+            actions[2].as_ref().unwrap(),
             &EventRouterAction::Ready {
                 handle: MapHandle(7),
             }
         );
         assert!(view.router().is_dom_ready());
+        assert_eq!(view.router().initialized_handle(), Some(MapHandle(7)));
+        assert_eq!(view.router().ready_handle(), Some(MapHandle(7)));
+        assert!(view.is_map_ready());
         assert_eq!(view.lifecycle().map_handle(), Some(MapHandle(7)));
         assert_eq!(view.controller().handle(), Some(MapHandle(7)));
     }
