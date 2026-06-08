@@ -347,6 +347,26 @@ impl<T: 'static> MapLibreView<T> {
         cx.update_entity(&webview, |webview, _| webview.evaluate_script(&script))
             .map_err(|error| MapLibreError::platform(error.to_string()))
     }
+
+    pub fn resize_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
+        let Some(handle) = self.map_handle() else {
+            return Ok(false);
+        };
+
+        self.dispatch_mounted_command(MapCommand::Resize { handle }, cx)?;
+        Ok(true)
+    }
+
+    pub fn cleanup_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
+        let Some(handle) = self.map_handle() else {
+            return Ok(false);
+        };
+
+        self.dispatch_mounted_command(MapCommand::Destroy { handle }, cx)?;
+        self.lifecycle.clear();
+        self.controller.clear_handle();
+        Ok(true)
+    }
 }
 
 impl<T: CommandTransport> MapLibreView<T> {
