@@ -188,6 +188,7 @@ pub struct MapLibreView<T = FakeTransport> {
     mounted_dispatch_queue: VecDeque<MapCommand>,
     webview: Option<Entity<gpui_wry::WebView>>,
     ipc_inbox: Option<MountedIpcInbox>,
+    mounted_visible: bool,
     last_ipc_error: Option<String>,
 }
 
@@ -213,6 +214,7 @@ impl<T> MapLibreView<T> {
             mounted_dispatch_queue: VecDeque::new(),
             webview: None,
             ipc_inbox: None,
+            mounted_visible: true,
             last_ipc_error: None,
         }
     }
@@ -299,6 +301,10 @@ impl<T> MapLibreView<T> {
         self.webview.as_ref()
     }
 
+    pub fn is_mounted_visible(&self) -> bool {
+        self.mounted_visible
+    }
+
     pub fn set_webview(&mut self, webview: Entity<gpui_wry::WebView>) {
         self.webview = Some(webview);
         self.ipc_inbox = None;
@@ -383,6 +389,12 @@ impl<T> MapLibreView<T> {
     fn submit_mounted_command(&mut self, command: MapCommand) -> RuntimeCommandAction {
         self.mounted_command_queue.submit_command(command)
     }
+
+    fn set_mounted_visibility_state(&mut self, visible: bool) -> bool {
+        let changed = self.mounted_visible != visible;
+        self.mounted_visible = visible;
+        changed
+    }
 }
 
 impl<T: 'static> MapLibreView<T> {
@@ -431,6 +443,33 @@ impl<T: 'static> MapLibreView<T> {
         }
 
         Ok(flushed)
+    }
+
+    fn set_mounted_visibility(&mut self, visible: bool, cx: &mut Context<Self>) -> Result<bool> {
+        let changed = self.mounted_visible != visible;
+
+        if let Some(webview) = self.webview.clone() {
+            cx.update_entity(&webview, |webview, _| {
+                if visible {
+                    webview.show();
+                } else {
+                    webview.hide();
+                }
+            });
+        }
+
+        self.set_mounted_visibility_state(visible);
+        Ok(changed)
+    }
+
+    /// Show the hosted WebView without requiring app code to touch `gpui_wry`.
+    pub fn show_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
+        self.set_mounted_visibility(true, cx)
+    }
+
+    /// Hide the hosted WebView without dropping the loaded MapLibre runtime.
+    pub fn hide_mounted(&mut self, cx: &mut Context<Self>) -> Result<bool> {
+        self.set_mounted_visibility(false, cx)
     }
 
     /// Resize the hosted WebView map if a map handle has been initialized.
@@ -684,6 +723,18 @@ mod tests {
 
         assert_eq!(view.pending_mounted_command_len(), 0);
         assert_eq!(view.mounted_dispatch_queue, VecDeque::from([command]));
+    }
+
+    #[test]
+    fn map_view_tracks_mounted_visibility_state() {
+        let mut view = MapLibreView::new(MapLibreViewConfig::default());
+
+        assert!(view.is_mounted_visible());
+        assert!(view.set_mounted_visibility_state(false));
+        assert!(!view.is_mounted_visible());
+        assert!(!view.set_mounted_visibility_state(false));
+        assert!(view.set_mounted_visibility_state(true));
+        assert!(view.is_mounted_visible());
     }
 
     #[test]
