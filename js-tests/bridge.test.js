@@ -106,7 +106,8 @@ test("dispatch init calls map core and posts initialized handle", () => {
             event: { milestone: "initialized", elapsed_ms: 0 },
         },
     ]);
-    assert.deepEqual(fakeMapCore.recorded_calls(), [
+    const calls = fakeMapCore.recorded_calls();
+    assert.deepEqual(calls, [
         {
             name: "init_map",
             payload: {
@@ -120,13 +121,23 @@ test("dispatch init calls map core and posts initialized handle", () => {
             },
         },
         {
+            name: "register_on_load",
+            payload: {
+                handle: 1,
+                callback: calls[1].payload.callback,
+            },
+        },
+        {
             name: "register_startup_events",
             payload: {
                 handle: 1,
-                callback: fakeMapCore.recorded_calls()[1].payload.callback,
+                callback: calls[2].payload.callback,
             },
         },
     ]);
+
+    calls[1].payload.callback();
+    assert.deepEqual(target.messages.at(-1), { type: "ready", handle: 1 });
 });
 
 test("inline bootstrap contract can rewrite bridge import and dispatch init", async () => {
@@ -192,7 +203,8 @@ test("inline bootstrap contract can rewrite bridge import and dispatch init", as
             event: { milestone: "initialized" },
         },
     ]);
-    assert.deepEqual(fakeMapCore.recorded_calls(), [
+    const calls = fakeMapCore.recorded_calls();
+    assert.deepEqual(calls, [
         {
             name: "init_map",
             payload: {
@@ -201,10 +213,17 @@ test("inline bootstrap contract can rewrite bridge import and dispatch init", as
             },
         },
         {
+            name: "register_on_load",
+            payload: {
+                handle: 1,
+                callback: calls[1].payload.callback,
+            },
+        },
+        {
             name: "register_startup_events",
             payload: {
                 handle: 1,
-                callback: fakeMapCore.recorded_calls()[1].payload.callback,
+                callback: calls[2].payload.callback,
             },
         },
     ]);

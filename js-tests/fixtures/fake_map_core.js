@@ -247,6 +247,10 @@ export function register_startup_events(handle, callback) {
     record("register_startup_events", { handle, callback });
 }
 
+export function register_on_load(handle, callback) {
+    record("register_on_load", { handle, callback });
+}
+
 export function unregister_on_map_events(handle) {
     record("unregister_on_map_events", { handle });
 }

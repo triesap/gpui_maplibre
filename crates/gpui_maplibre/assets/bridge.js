@@ -152,6 +152,16 @@ function register_startup_timing(handle, target) {
     });
 }
 
+function register_map_ready(handle, target) {
+    if (typeof mapCore.register_on_load !== "function") {
+        return;
+    }
+
+    mapCore.register_on_load(handle, () => {
+        post({ type: "ready", handle }, target);
+    });
+}
+
 export function dispatch(command, target = default_target()) {
     try {
         if (command === undefined || command === null || typeof command.type !== "string") {
@@ -169,6 +179,7 @@ export function dispatch(command, target = default_target()) {
             post_startup_timing("constructor_end", target);
             post({ type: "initialized", handle }, target);
             post_startup_timing("initialized", target);
+            register_map_ready(handle, target);
             register_startup_timing(handle, target);
             return { ok: true };
         }
