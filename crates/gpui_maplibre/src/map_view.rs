@@ -24,6 +24,10 @@ type MountedIpcInbox = Rc<RefCell<VecDeque<String>>>;
 /// This is the happy path for applications: provide a map config, then render the returned
 /// `Entity<MapLibreView>` inside the parent view. The crate owns the inline WebView HTML,
 /// Wry child creation, `gpui_wry` wrapping, and IPC routing.
+///
+/// The returned view becomes initialized when the MapLibre constructor returns a handle, then ready
+/// after MapLibre emits `load`. Use [`MapLibreView::is_map_ready`] when first presentation should
+/// wait for a fully loaded map.
 pub fn create_map_view<T: 'static>(
     config: MapLibreViewConfig,
     window: &mut Window,
@@ -35,6 +39,8 @@ pub fn create_map_view<T: 'static>(
 /// Create a hidden mounted map that can warm up before it is shown.
 ///
 /// Use [`MapLibreView::show_mounted`] when the app is ready to present the map route.
+/// This avoids paying WebView and MapLibre constructor cost inside the visible route switch. Remote
+/// styles, glyphs, sprites, and tiles may still load after the local runtime is ready.
 pub fn create_prewarmed_map_view<T: 'static>(
     config: MapLibreViewConfig,
     window: &mut Window,
@@ -273,17 +279,20 @@ impl<T> MapLibreView<T> {
         &mut self.lifecycle
     }
 
-    /// Return true once the WebView bridge has emitted `dom_ready`.
+    /// Return true once the WebView document can receive bootstrap commands.
     pub fn is_dom_ready(&self) -> bool {
         self.router.is_dom_ready()
     }
 
-    /// Return true once MapLibre has emitted its ready event.
+    /// Return true once MapLibre has emitted `load`.
+    ///
+    /// This is stricter than initialization: `map_handle` can be available while MapLibre is still
+    /// loading style resources. Mounted command helpers queue map commands until this returns true.
     pub fn is_map_ready(&self) -> bool {
         self.router.is_map_ready()
     }
 
-    /// Return the current MapLibre handle after initialization.
+    /// Return the current MapLibre handle after constructor initialization.
     pub fn map_handle(&self) -> Option<MapHandle> {
         self.router.map_handle()
     }
@@ -327,6 +336,7 @@ impl<T> MapLibreView<T> {
         self.webview.as_ref()
     }
 
+    /// Return the crate-tracked visibility state for the hosted WebView.
     pub fn is_mounted_visible(&self) -> bool {
         self.mounted_visible
     }
@@ -425,6 +435,8 @@ impl<T> MapLibreView<T> {
 
 impl<T: 'static> MapLibreView<T> {
     /// Dispatch a command through the hosted WebView bridge.
+    ///
+    /// Commands that require a loaded map are queued until the mounted bridge emits `ready`.
     pub fn dispatch_mounted_command(
         &mut self,
         command: MapCommand,
