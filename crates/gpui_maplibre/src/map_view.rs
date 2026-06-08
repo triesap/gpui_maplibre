@@ -4,7 +4,10 @@ use crate::runtime::{
     route_ipc_message,
 };
 use crate::subscription::{EventSubscription, EventSubscriptionTarget};
-use crate::{AssetMode, CommandTransport, FakeTransport, MapController, MapHandle, MapInitOptions};
+use crate::{
+    AssetMode, CommandTransport, FakeTransport, MapController, MapHandle, MapInitOptions,
+    MapLibreAssets,
+};
 use crate::{MapCommand, MapLibreError, MapLibreEvent, Result};
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Window, div,
@@ -84,10 +87,20 @@ impl MapLibreViewConfig {
         }
     }
 
-    /// Override the MapLibre GL JS and CSS asset source.
-    pub fn with_asset_mode(mut self, asset_mode: AssetMode) -> Self {
-        self.asset_mode = asset_mode;
+    /// Override the MapLibre GL JS and CSS runtime assets.
+    pub fn with_assets(mut self, assets: MapLibreAssets) -> Self {
+        self.asset_mode = assets;
         self
+    }
+
+    /// Override the MapLibre GL JS and CSS runtime assets.
+    pub fn with_asset_mode(self, asset_mode: AssetMode) -> Self {
+        self.with_assets(asset_mode)
+    }
+
+    /// Return the configured MapLibre GL JS and CSS runtime assets.
+    pub fn assets(&self) -> &MapLibreAssets {
+        &self.asset_mode
     }
 
     /// Build the private file-backed HTML used by low-level integrations.
@@ -446,12 +459,11 @@ mod tests {
 
     #[test]
     fn map_view_config_keeps_assets_private() {
-        let asset_mode = AssetMode::urls("./vendor/maplibre-gl.js", "./vendor/maplibre-gl.css");
-        let config =
-            MapLibreViewConfig::new(MapInitOptions::default()).with_asset_mode(asset_mode.clone());
+        let assets = MapLibreAssets::urls("./vendor/maplibre-gl.js", "./vendor/maplibre-gl.css");
+        let config = MapLibreViewConfig::new(MapInitOptions::default()).with_assets(assets.clone());
         let stub = MapLibreWebViewStub::new(config);
 
-        assert_eq!(stub.config().asset_mode, asset_mode);
+        assert_eq!(stub.config().assets(), &assets);
         assert!(stub.config().private_html().contains(r#"id="map""#));
         assert!(stub.config().private_html().contains(r#"./bridge.js"#));
         assert!(
