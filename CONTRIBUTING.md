@@ -9,6 +9,8 @@ Thanks for your interest in contributing to gpui_maplibre.
 
 ## Development setup
 
+Use Rust 1.99.0, the pinned development toolchain and minimum supported version.
+
 This repository is a Rust crate with private WebView assets and optional
 JavaScript bridge tests. Typical tasks:
 

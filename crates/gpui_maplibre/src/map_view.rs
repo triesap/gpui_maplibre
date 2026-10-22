@@ -138,21 +138,12 @@ fn text_protocol_response(status: u16, message: &str) -> wry::http::Response<Cow
 }
 
 /// Configuration for a mounted MapLibre view.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct MapLibreViewConfig {
     /// Initial MapLibre options dispatched when the WebView bootstraps.
     pub options: MapInitOptions,
     /// Source for MapLibre GL JS and CSS runtime assets.
     pub asset_mode: AssetMode,
-}
-
-impl Default for MapLibreViewConfig {
-    fn default() -> Self {
-        Self {
-            options: MapInitOptions::default(),
-            asset_mode: AssetMode::default(),
-        }
-    }
 }
 
 impl MapLibreViewConfig {
@@ -511,7 +502,7 @@ impl<T: 'static> MapLibreView<T> {
     ) -> Result<()> {
         let script = crate::script::script_for_command(command)?;
 
-        cx.update_entity(&webview, |webview, _| webview.evaluate_script(&script))
+        cx.update_entity(webview, |webview, _| webview.evaluate_script(&script))
             .map_err(|error| MapLibreError::platform(error.to_string()))
     }
 

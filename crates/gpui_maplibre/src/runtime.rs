@@ -40,6 +40,10 @@ pub enum EventRouterAction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Keep the public owned-command API and allocation-free dispatch representation"
+)]
 pub enum RuntimeCommandAction {
     Dispatch(MapCommand),
     Queued,
